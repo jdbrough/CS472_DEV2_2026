@@ -122,7 +122,7 @@ def main():
 
     # Plot
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.plot_date(times, data, "-", linewidth=0.8)
+    ax.plot(times, data, "-", linewidth=0.8)
 
     ax.set_title(tr.id)
     ax.set_xlabel("Time (UTC)")
