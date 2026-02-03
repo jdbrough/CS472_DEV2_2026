@@ -121,7 +121,6 @@ def main():
         if network.code in excluded_networks:
             continue
         for station in network:
-            print(f"Requesting {network.code}.{station.code}...")
             try:
                 st = client.get_waveforms(
                     network=network.code,
@@ -131,7 +130,19 @@ def main():
                     starttime=starttime,
                     endtime=endtime,
                 )
-                all_data += st
+                temp_data = st.copy()
+                st = client.get_waveforms(
+                    network=network.code,
+                    station=station.code,
+                    location="*",
+                    channel="BNZ",
+                    starttime=starttime,
+                    endtime=endtime,
+                )
+                temp_data += st
+                if len(temp_data) > 1:
+                    print(f"Requesting {network.code}.{station.code}...")
+                    all_data += temp_data
             except Exception:
                 continue
 
