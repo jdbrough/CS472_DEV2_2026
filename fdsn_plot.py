@@ -113,12 +113,12 @@ def main():
 
     all_data = Stream()
 
-    excluded_networks = ['SY', '9M', 'XE', 'NP', 'GM', 'YM', 'Z5', 'YG']
+    included_networks = ['AK']
 
     for network in inventory:
         # Certain networks will be identified but the data not publicly accessible so just skip them
         # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
-        if network.code in excluded_networks:
+        if network.code not in included_networks:
             continue
         for station in network:
             try:
