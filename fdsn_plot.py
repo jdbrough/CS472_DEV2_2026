@@ -7,7 +7,9 @@ import subprocess
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy import Stream
+from scipy.signal import coherence
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 DEFAULT_ID = "12060740"
@@ -42,6 +44,30 @@ def get_event_info(client, event_id):
 
     return origin.time, origin.latitude, origin.longitude
 
+def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
+    """
+    Time-dependent, band-averaged coherence using Welch averaging.
+    """
+    nwin  = int(win_len * fs)
+    nstep = int(step_len * fs)
+    nseg  = int(seg_len * fs)
+
+    times = []
+    coh_vals = []
+
+    for start in range(0, len(x) - nwin, nstep):
+        xs = x[start:start + nwin]
+        ys = y[start:start + nwin]
+
+        f, Cxy = coherence(xs, ys, fs=fs, nperseg=nseg)
+
+        band = (f >= fmin) & (f <= fmax)
+        coh_vals.append(Cxy[band].mean())
+
+        times.append((start + nwin / 2) / fs)
+
+    return np.array(times), np.array(coh_vals)
+
 def main():
     parser = argparse.ArgumentParser(
         description="Query FDSN data and plot waveform to PNG"
@@ -58,9 +84,9 @@ def main():
         help = "Search radius in degrees around epicenter"
     )
     parser.add_argument(
-        "--channel",
-        default = "BHZ",
-        help = "Seismic channel to fetch (default: BHZ)"
+        "--direction",
+        default = "N",
+        help = "Direction to fetch (N, E, Z; default: N)"
     )
     parser.add_argument(
         "--client",
@@ -112,26 +138,76 @@ def main():
     )
 
     all_data = Stream()
+    all_coh_ts = []
 
-    excluded_networks = ['SY', '9M', 'XE', 'NP', 'GM', 'YM', 'Z5', 'YG']
+    included_networks = ['AK']
 
     for network in inventory:
         # Certain networks will be identified but the data not publicly accessible so just skip them
         # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
-        if network.code in excluded_networks:
+        if network.code not in included_networks:
             continue
         for station in network:
-            print(f"Requesting {network.code}.{station.code}...")
             try:
                 st = client.get_waveforms(
                     network=network.code,
                     station=station.code,
                     location="*",
-                    channel=args.channel,
+                    channel="*H"+args.direction,
                     starttime=starttime,
                     endtime=endtime,
+                    attach_response=True
                 )
-                all_data += st
+                temp = st.copy()
+                tr_h = st[0]
+                st = client.get_waveforms(
+                    network=network.code,
+                    station=station.code,
+                    location="*",
+                    channel="*N"+args.direction,
+                    starttime=starttime,
+                    endtime=endtime,
+                    attach_response=True
+                )
+                temp += st.copy()
+                tr_n = st[0]
+
+                if len(temp) >= 2:
+                    tr_h.remove_response(output="VEL", water_level=60)
+                    tr_n.remove_response(output="VEL", water_level=60)
+
+                    for tr in (tr_h, tr_n):
+                        tr.detrend("demean")
+                        tr.detrend("linear")
+                        tr.taper(0.05)
+                    
+                    fs = min(tr_h.stats.sampling_rate, tr_n.stats.sampling_rate)
+
+                    tr_h.resample(fs)
+                    tr_n.resample(fs)
+
+                    start = max(tr_h.stats.starttime, tr_n.stats.starttime)
+                    end = min(tr_h.stats.endtime, tr_n.stats.endtime)
+
+                    tr_h.trim(start, end)
+                    tr_n.trim(start, end)
+
+                    times, coh_ts = sliding_coherence(
+                        tr_h.data,
+                        tr_n.data,
+                        fs=fs,
+                        win_len=60.0,      # Coherence window in seconds
+                        step_len=5.0,      # update every 5 seconds
+                        seg_len=10.0,      # FFT segment length
+                        fmin=0.5,
+                        fmax=5.0
+                    )
+
+                    label = f"{tr_h.id} vs {tr_n.id}"
+                    all_coh_ts.append((times, coh_ts, label))
+
+                    print(f"Requested {network.code}.{station.code}...")
+                    all_data += temp
             except Exception:
                 continue
 
@@ -146,23 +222,56 @@ def main():
     all_data.taper(max_percentage=0.05)
 
     # Plotting
-    plt.style.use('ggplot')
-    fig, ax = plt.subplots(figsize=(12, 6))
-    
+
+    plt.style.use("ggplot")
+
+    fig, (ax_ts, ax_coh) = plt.subplots(
+        2, 1,
+        figsize=(12, 9),
+        sharex=True,
+        gridspec_kw={"height_ratios": [2, 1]}
+    )
+
+    # ---- Top panel: time series ----
     for tr in all_data:
-        ax.plot(tr.times("matplotlib"), tr.data, label=tr.id, lw=1)
+        ax_ts.plot(
+            tr.times(),
+            tr.data,
+            lw=0.8,
+            label=tr.id
+        )
 
-    ax.set_title(f"Event {args.eventid} Comparison | Channel: {args.channel}")
-    ax.set_ylabel("Counts")
-    ax.xaxis_date()
-    fig.autofmt_xdate()
-    ax.legend(loc='upper right', fontsize='small', ncol=2)
+    ax_ts.set_ylabel("Velocity")
+    ax_ts.set_title(f"Event {args.eventid}: Broadband vs Strong Motion")
+    ax_ts.grid(True)
 
-    out_png = f"event_{args.eventid}_comparison.png"
-    plt.savefig(out_png, dpi=150, bbox_inches="tight")
+    # Keep legend readable
+    if len(all_data) <= 8:
+        ax_ts.legend(fontsize="x-small", ncol=2)
+
+    # ---- Bottom panel: coherence vs time ----
+    for times, coh_ts, label in all_coh_ts:
+        ax_coh.plot(
+            times,
+            coh_ts,
+            lw=1.2,
+            label=label
+        )
+
+    ax_coh.set_xlabel("Time since start (s)")
+    ax_coh.set_ylabel("Coherence")
+    ax_coh.set_ylim(0, 1.05)
+    ax_coh.grid(True)
+
+    if len(all_coh_ts) <= 6:
+        ax_coh.legend(fontsize="x-small", ncol=2)
+
+    # ---- Save and show ----
+    out_png = f"event_{args.eventid}_timeseries_coherence.png"
+    plt.savefig(out_png, dpi=200, bbox_inches="tight")
     plt.close(fig)
 
-    print(f"Success! Saved to {out_png}")
+    print(f"Saved presentation figure to {out_png}")
     open_image(out_png)
 
 
