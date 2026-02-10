@@ -1,2 +1,4 @@
 obspy
 matplotlib
+scipy
+numpy
