@@ -15,6 +15,7 @@ import numpy as np
 DEFAULT_ID = "12060740"
 DEFAULT_MINUTES = 10
 DEFAULT_CLIENT = "IRIS"
+DEFAULT_MAG: any
 
 
 def open_image(path):
@@ -40,6 +41,8 @@ def open_image(path):
 def get_event_info(client, event_id):
     catalog = client.get_events(eventid = event_id)
     event = catalog[0]
+    DEFAULT_MAG = event.preferred_magnitude()
+    print(DEFAULT_MAG.mag, DEFAULT_MAG.magnitude_type)
     origin = event.preferred_origin() or event.origins[0]
 
     return origin.time, origin.latitude, origin.longitude
@@ -182,6 +185,10 @@ def main():
                         tr.taper(0.05)
                     
                     fs = min(tr_h.stats.sampling_rate, tr_n.stats.sampling_rate)
+                    try:
+                        print(tr_h.stats.mag)
+                    except Exception:
+                        pass
 
                     tr_h.resample(fs)
                     tr_n.resample(fs)
