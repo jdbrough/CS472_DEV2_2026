@@ -41,8 +41,10 @@ def get_event_info(client, event_id):
     catalog = client.get_events(eventid = event_id)
     event = catalog[0]
     origin = event.preferred_origin() or event.origins[0]
+    mag_obj = event.preferred_magnitude() or event.magnitudes[0]
+    magnitude = mag_obj.mag
 
-    return origin.time, origin.latitude, origin.longitude
+    return origin.time, origin.latitude, origin.longitude, magnitude
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
     """
@@ -67,6 +69,22 @@ def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
         times.append((start + nwin / 2) / fs)
 
     return np.array(times), np.array(coh_vals)
+
+def mag_to_range(magnitude):
+    if magnitude >= 6:
+        dist_km = 500
+    elif magnitude >= 5:
+        dist_km = 300
+    elif magnitude >= 4:
+        dist_km = 200
+    elif magnitude >= 3:
+        dist_km = 100
+    else:
+        dist_km = 100
+
+    radius_deg = round((dist_km / 111.19), 2)
+
+    return radius_deg
 
 def main():
     parser = argparse.ArgumentParser(
@@ -122,12 +140,14 @@ def main():
     client = Client(args.client)
 
     print(f"--- Fetching Event {args.eventid} ---")
-    ev_time, ev_lat, ev_long = get_event_info(client, args.eventid)
+    ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
 
     #Time starts five minutes before event
     starttime = ev_time - 300
     endtime = ev_time + (args.minutes * 60)
 
+    args.radius = mag_to_range(ev_mag)
+    
     print(f"Searching stations within {args.radius} degrees...")
 
     inventory = client.get_stations(
