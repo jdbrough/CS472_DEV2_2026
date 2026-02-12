@@ -157,7 +157,7 @@ def main():
         level="station"
     )
 
-    all_data = Stream()
+    per_station_data = []
     all_coh_ts = []
 
     included_networks = ['AK']
@@ -227,50 +227,70 @@ def main():
                     all_coh_ts.append((times, coh_ts, label))
 
                     print(f"Requested {network.code}.{station.code}...")
-                    all_data += temp
+
+                    station_package = {
+                        "station_id": f"{network.code}.{station.code}",
+                        "waveforms": temp,
+                        "coherence_times": times,
+                        "coherence_values": coh_ts,
+                        "label": label
+                    }
+
+                    per_station_data.append(station_package)
+
             except Exception:
                 continue
 
-    if not all_data:
+    if not per_station_data:
         print("No waveform data found for the given parameters.")
         return
 
     # Processing
-    all_data.merge(method=1, fill_value='interpolate')
-    all_data.detrend("demean")
-    all_data.detrend("linear")
-    all_data.taper(max_percentage=0.05)
+
+    for entry in per_station_data:
+        st = entry["waveforms"]
+        st.merge(method=1, fill_value='interpolate')
+        st.detrend("demean")
+        st.detrend("linear")
+        st.taper(max_percentage=0.05)
 
     # Plotting
 
+    output_dir = f"event_{args.eventid}_plots"
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    
     plt.style.use("ggplot")
+    for entry in per_station_data:
+        station_name = entry["station_id"]
+        out_png = os.path.join(output_dir, f"station_{station_name}_coherence.png")
 
-    fig, (ax_ts, ax_coh) = plt.subplots(
-        2, 1,
-        figsize=(12, 9),
-        sharex=True,
-        gridspec_kw={"height_ratios": [2, 1]}
-    )
-
-    # ---- Top panel: time series ----
-    for tr in all_data:
-        ax_ts.plot(
-            tr.times(),
-            tr.data,
-            lw=0.8,
-            label=tr.id
+        fig, (ax_ts, ax_coh) = plt.subplots(
+            2, 1,
+            figsize=(12, 9),
+            sharex=True,
+            gridspec_kw={"height_ratios": [2, 1]}
         )
 
-    ax_ts.set_ylabel("Velocity")
-    ax_ts.set_title(f"Event {args.eventid}: Broadband vs Strong Motion")
-    ax_ts.grid(True)
+    # ---- Top panel: time series ----
+        temp = entry["waveforms"]
+        for tr in temp:
+            ax_ts.plot(
+                tr.times(),
+                tr.data,
+                lw=0.8,
+                label=tr.id
+            )
 
-    # Keep legend readable
-    if len(all_data) <= 8:
-        ax_ts.legend(fontsize="x-small", ncol=2)
+        ax_ts.set_ylabel("Velocity")
+        ax_ts.set_title(f"Event {args.eventid}: Broadband vs Strong Motion")
+        ax_ts.grid(True)
 
-    # ---- Bottom panel: coherence vs time ----
-    for times, coh_ts, label in all_coh_ts:
+        # ---- Bottom panel: coherence vs time ----
+        times = entry["coherence_times"]
+        coh_ts = entry["coherence_values"]
+        label = entry["label"]
+
         ax_coh.plot(
             times,
             coh_ts,
@@ -278,21 +298,19 @@ def main():
             label=label
         )
 
-    ax_coh.set_xlabel("Time since start (s)")
-    ax_coh.set_ylabel("Coherence")
-    ax_coh.set_ylim(0, 1.05)
-    ax_coh.grid(True)
+        ax_coh.set_xlabel("Time since start (s)")
+        ax_coh.set_ylabel("Coherence")
+        ax_coh.set_ylim(0, 1.05)
+        ax_coh.grid(True)
 
-    if len(all_coh_ts) <= 6:
-        ax_coh.legend(fontsize="x-small", ncol=2)
+        if len(all_coh_ts) <= 6:
+            ax_coh.legend(fontsize="x-small", ncol=2)
 
-    # ---- Save and show ----
-    out_png = f"event_{args.eventid}_timeseries_coherence.png"
-    plt.savefig(out_png, dpi=200, bbox_inches="tight")
-    plt.close(fig)
+        # ---- Save and show ----
+        plt.savefig(out_png, dpi=200, bbox_inches="tight")
+        plt.close(fig)
 
-    print(f"Saved presentation figure to {out_png}")
-    open_image(out_png)
+        print(f"Saved presentation figure to {out_png}")
 
 
 if __name__ == "__main__":
