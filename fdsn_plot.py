@@ -283,6 +283,7 @@ def main():
         ax_ts.set_ylabel("Velocity")
         ax_ts.set_title(f"Event {args.eventid}, Station {entry["station_id"]}: Broadband vs Strong Motion")
         ax_ts.grid(True)
+        ax_ts.legend(fontsize="x-small")
 
         # ---- Bottom panel: coherence vs time ----
         ax_coh.plot(
