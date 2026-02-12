@@ -34,9 +34,9 @@ The script will:
 	4.	Compute coherence
 	5.	Save plots into an output folder
 
-Selecting the Earthquake Event
 
-Currently, the only way to change the earthquake event being analyzed is by editing the source code.
+
+Selecting the Earthquake Event
 
 Open:
 fdsn_plot.py
@@ -45,6 +45,10 @@ Locate:
 DEFAULT_ID = "10976411"
 
 Replace with the desired FDSN event ID.
+
+or 
+
+python fdsn_plot.py --eventid <EVENT_ID>
 
 Output
 
