@@ -1,1 +1,75 @@
-# CS472_DEV2_2026
+AECQAQC Seismic Coherence Plot Tool
+
+This project is a Python-based QA/QC tool for comparing seismic waveform data from multiple stations associated with a specific earthquake event. The script queries FDSN web services, retrieves waveform data, computes time-dependent coherence between channels, and generates visualization plots.
+Features
+•	Queries seismic event information using FDSN web services
+•	Automatically selects stations within a radius based on event magnitude
+•	Fetches broadband and strong-motion waveform data
+•	Generates PNG visualization plots including:
+    •	Time series waveform comparison
+    •	Band-averaged coherence vs time
+
+Requirements
+Install Dependencies
+pip install -r requirements.txt
+
+IMPORTANT: You must activate the project virtual environment (venv) before running the script.
+Activate virtual environment
+
+Mac/Linux:
+source .venv/bin/activate
+
+Windows:
+.venv\Scripts\activate
+
+Running the Script
+Basic usage:
+
+python fdsn_plot.py
+
+The script will:
+	1.	Query the specified earthquake event
+	2.	Find nearby stations
+	3.	Download waveform data 
+	4.	Compute coherence
+	5.	Save plots into an output folder
+
+
+
+Selecting the Earthquake Event
+
+Open:
+fdsn_plot.py
+
+Locate:
+DEFAULT_ID = "10976411"
+
+Replace with the desired FDSN event ID.
+
+or 
+
+python fdsn_plot.py --eventid <EVENT_ID>
+
+Output
+
+Generated plots are saved in:
+event_<EVENT_ID>_plots/
+
+This folder is currently located within the CS472_DEV2_2026 folder
+
+Each station will produce a PNG file:
+
+station_<NETWORK>.<STATION>_coherence.png
+
+Each figure contains:
+•	Top panel: velocity time series
+•	Bottom panel: sliding-window coherence
+
+How It Works
+	1.	Fetch event metadata (time, location, magnitude)
+	2.	Convert magnitude to search radius
+	3.	Query station inventory
+	4.	Download waveform channels
+	5.	Preprocess signals
+	6.	Compute band-averaged coherence
+	7.	Generate and save plots
