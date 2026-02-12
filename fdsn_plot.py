@@ -158,7 +158,6 @@ def main():
     )
 
     per_station_data = []
-    all_coh_ts = []
 
     included_networks = ['AK']
 
@@ -224,7 +223,6 @@ def main():
                     )
 
                     label = f"{tr_h.id} vs {tr_n.id}"
-                    all_coh_ts.append((times, coh_ts, label))
 
                     print(f"Requested {network.code}.{station.code}...")
 
@@ -283,28 +281,22 @@ def main():
             )
 
         ax_ts.set_ylabel("Velocity")
-        ax_ts.set_title(f"Event {args.eventid}: Broadband vs Strong Motion")
+        ax_ts.set_title(f"Event {args.eventid}, Station {entry["station_id"]}: Broadband vs Strong Motion")
         ax_ts.grid(True)
 
         # ---- Bottom panel: coherence vs time ----
-        times = entry["coherence_times"]
-        coh_ts = entry["coherence_values"]
-        label = entry["label"]
-
         ax_coh.plot(
-            times,
-            coh_ts,
+            entry["coherence_times"],
+            entry["coherence_values"],
             lw=1.2,
-            label=label
+            label=entry["label"]
         )
 
         ax_coh.set_xlabel("Time since start (s)")
         ax_coh.set_ylabel("Coherence")
         ax_coh.set_ylim(0, 1.05)
         ax_coh.grid(True)
-
-        if len(all_coh_ts) <= 6:
-            ax_coh.legend(fontsize="x-small", ncol=2)
+        ax_coh.legend(fontsize="x-small")
 
         # ---- Save and show ----
         plt.savefig(out_png, dpi=200, bbox_inches="tight")
