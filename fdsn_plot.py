@@ -56,6 +56,7 @@ def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
 
     times = []
     coh_vals = []
+    top_3 = []
 
     for start in range(0, len(x) - nwin, nstep):
         xs = x[start:start + nwin]
@@ -64,11 +65,16 @@ def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
         f, Cxy = coherence(xs, ys, fs=fs, nperseg=nseg)
 
         band = (f >= fmin) & (f <= fmax)
-        coh_vals.append(Cxy[band].mean())
+        coh_val = Cxy[band].mean()
+        coh_vals.append(coh_val)
+        top_3.append(coh_val)
+        top_3.sort(reverse=True)
+        if len(top_3) > 3:
+            top_3.pop()
 
         times.append((start + nwin / 2) / fs)
 
-    return np.array(times), np.array(coh_vals)
+    return np.array(times), np.array(coh_vals), top_3
 
 def mag_to_range(magnitude):
     if magnitude >= 6:
@@ -100,11 +106,6 @@ def main():
         type = float,
         default = 1.0,
         help = "Search radius in degrees around epicenter"
-    )
-    parser.add_argument(
-        "--direction",
-        default = "N",
-        help = "Direction to fetch (N, E, Z; default: N)"
     )
     parser.add_argument(
         "--client",
@@ -154,7 +155,8 @@ def main():
         latitude=ev_lat, 
         longitude=ev_long, 
         maxradius=args.radius, 
-        level="station"
+        level="station",
+        channel="BN?,HN?,BH?,HH?"
     )
 
     per_station_data = []
@@ -172,69 +174,109 @@ def main():
                     network=network.code,
                     station=station.code,
                     location="*",
-                    channel="*H"+args.direction,
+                    channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
                     starttime=starttime,
                     endtime=endtime,
                     attach_response=True
                 )
                 temp = st.copy()
-                tr_h = st[0]
-                st = client.get_waveforms(
-                    network=network.code,
-                    station=station.code,
-                    location="*",
-                    channel="*N"+args.direction,
-                    starttime=starttime,
-                    endtime=endtime,
-                    attach_response=True
-                )
-                temp += st.copy()
-                tr_n = st[0]
 
-                if len(temp) >= 2:
-                    tr_h.remove_response(output="VEL", water_level=60)
-                    tr_n.remove_response(output="VEL", water_level=60)
+                # Group traces by channel prefix (channel minus last character), e.g., 'BH' from 'BHN'
+                prefix_map = {}
+                for tr in temp:
+                    ch = tr.stats.channel
+                    if not ch:
+                        continue
+                    comp = ch[-1].upper()
+                    prefix = ch[:-1]
+                    if prefix not in prefix_map:
+                        prefix_map[prefix] = {}
+                    prefix_map[prefix][comp] = tr
 
-                    for tr in (tr_h, tr_n):
-                        tr.detrend("demean")
-                        tr.detrend("linear")
-                        tr.taper(0.05)
-                    
-                    fs = min(tr_h.stats.sampling_rate, tr_n.stats.sampling_rate)
+                coherence_entries = []
 
-                    tr_h.resample(fs)
-                    tr_n.resample(fs)
+                # Build map of component -> list of traces (across prefixes)
+                comp_map = {}
+                for prefix, comps in prefix_map.items():
+                    for comp, tr in comps.items():
+                        comp_map.setdefault(comp, []).append((prefix, tr))
 
-                    start = max(tr_h.stats.starttime, tr_n.stats.starttime)
-                    end = min(tr_h.stats.endtime, tr_n.stats.endtime)
+                # For each component (N/E/Z), compute coherence between traces of the same component
+                for comp, tr_list in comp_map.items():
+                    # need at least two traces to compute coherence
+                    if len(tr_list) < 2:
+                        continue
+                    # compute coherence for all unique pairs among traces with same component
+                    for i in range(len(tr_list)):
+                        for j in range(i + 1, len(tr_list)):
+                            pref_a, tr_a = tr_list[i]
+                            pref_b, tr_b = tr_list[j]
+                            tr_a = tr_a.copy()
+                            tr_b = tr_b.copy()
+                            try:
+                                tr_a.remove_response(output="VEL", water_level=60)
+                            except Exception:
+                                pass
+                            try:
+                                tr_b.remove_response(output="VEL", water_level=60)
+                            except Exception:
+                                pass
 
-                    tr_h.trim(start, end)
-                    tr_n.trim(start, end)
+                            for tr in (tr_a, tr_b):
+                                tr.detrend("demean")
+                                tr.detrend("linear")
+                                tr.taper(0.05)
 
-                    times, coh_ts = sliding_coherence(
-                        tr_h.data,
-                        tr_n.data,
-                        fs=fs,
-                        win_len=60.0,      # Coherence window in seconds
-                        step_len=5.0,      # update every 5 seconds
-                        seg_len=10.0,      # FFT segment length
-                        fmin=0.5,
-                        fmax=5.0
-                    )
+                            fs = min(tr_a.stats.sampling_rate, tr_b.stats.sampling_rate)
 
-                    label = f"{tr_h.id} vs {tr_n.id}"
+                            try:
+                                tr_a.resample(fs)
+                                tr_b.resample(fs)
+                            except Exception:
+                                pass
 
-                    print(f"Requested {network.code}.{station.code}...")
+                            start = max(tr_a.stats.starttime, tr_b.stats.starttime)
+                            end = min(tr_a.stats.endtime, tr_b.stats.endtime)
+                            if end <= start:
+                                continue
 
-                    station_package = {
-                        "station_id": f"{network.code}.{station.code}",
-                        "waveforms": temp,
-                        "coherence_times": times,
-                        "coherence_values": coh_ts,
-                        "label": label
-                    }
+                            tr_a.trim(start, end)
+                            tr_b.trim(start, end)
 
-                    per_station_data.append(station_package)
+                            times, coh_ts, top_3 = sliding_coherence(
+                                tr_a.data,
+                                tr_b.data,
+                                fs=fs,
+                                win_len=60.0,
+                                step_len=5.0,
+                                seg_len=10.0,
+                                fmin=0.5,
+                                fmax=5.0
+                            )
+
+                            avg_coh = sum(top_3) / len(top_3) if len(top_3) > 0 else 0
+
+                            label = f"{tr_a.id} vs {tr_b.id}"
+                            coherence_entries.append({
+                                "times": times,
+                                "values": coh_ts,
+                                "label": label,
+                                "avg_coh": avg_coh
+                            })
+
+                if not coherence_entries:
+                    # no usable pairs for this station
+                    continue
+
+                print(f"Requested {network.code}.{station.code}...")
+
+                station_package = {
+                    "station_id": f"{network.code}.{station.code}",
+                    "waveforms": temp,
+                    "coherence_entries": coherence_entries,
+                }
+
+                per_station_data.append(station_package)
 
             except Exception:
                 continue
@@ -263,39 +305,23 @@ def main():
         station_name = entry["station_id"]
         out_png = os.path.join(output_dir, f"station_{station_name}_coherence.png")
 
-        fig, (ax_ts, ax_coh) = plt.subplots(
-            2, 1,
-            figsize=(12, 9),
-            sharex=True,
-            gridspec_kw={"height_ratios": [2, 1]}
+        fig, ax_coh = plt.subplots(
+            figsize=(12, 6)
         )
 
-    # ---- Top panel: time series ----
-        temp = entry["waveforms"]
-        for tr in temp:
-            ax_ts.plot(
-                tr.times(),
-                tr.data,
-                lw=0.8,
-                label=tr.id
+        # ---- Coherence vs time ----
+        for coh in entry.get("coherence_entries", []):
+            ax_coh.plot(
+                coh["times"],
+                coh["values"],
+                lw=1.2,
+                label=f"{coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
             )
-
-        ax_ts.set_ylabel("Velocity")
-        ax_ts.set_title(f"Event {args.eventid}, Station {entry["station_id"]}: Broadband vs Strong Motion")
-        ax_ts.grid(True)
-        ax_ts.legend(fontsize="x-small")
-
-        # ---- Bottom panel: coherence vs time ----
-        ax_coh.plot(
-            entry["coherence_times"],
-            entry["coherence_values"],
-            lw=1.2,
-            label=entry["label"]
-        )
 
         ax_coh.set_xlabel("Time since start (s)")
         ax_coh.set_ylabel("Coherence")
         ax_coh.set_ylim(0, 1.05)
+        ax_coh.set_title(f"Event {args.eventid}, Station {entry['station_id']}: Coherence")
         ax_coh.grid(True)
         ax_coh.legend(fontsize="x-small")
 
@@ -303,7 +329,33 @@ def main():
         plt.savefig(out_png, dpi=200, bbox_inches="tight")
         plt.close(fig)
 
-        print(f"Saved presentation figure to {out_png}")
+        print(f"Saved coherence plot to {out_png}")
+
+    # Compilation plot - all coherence data together
+    fig, ax_comp = plt.subplots(figsize=(14, 8))
+    
+    for entry in per_station_data:
+        station_id = entry["station_id"]
+        for coh in entry.get("coherence_entries", []):
+            ax_comp.plot(
+                coh["times"],
+                coh["values"],
+                lw=1.0,
+                label=f"{station_id}: {coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
+            )
+    
+    ax_comp.set_xlabel("Time since start (s)")
+    ax_comp.set_ylabel("Coherence")
+    ax_comp.set_ylim(0, 1.05)
+    ax_comp.set_title(f"Event {args.eventid}: All Station Coherence Compilation")
+    ax_comp.grid(True)
+    ax_comp.legend(fontsize="x-small", loc="best")
+    
+    compilation_png = os.path.join(output_dir, f"event_{args.eventid}_coherence_compilation.png")
+    plt.savefig(compilation_png, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    
+    print(f"Saved compilation plot to {compilation_png}")
 
 
 if __name__ == "__main__":
