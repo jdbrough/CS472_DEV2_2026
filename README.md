@@ -37,42 +37,41 @@ This project is a Python-based QA/QC tool for comparing seismic waveform data fr
 
 ---
 ## Running the Script
-Basic usage:
 
+### Basic usage :
+```
 python fdsn_plot.py
+```
 
-The script will:
-	1.	Query the specified earthquake event
-	2.	Find nearby stations
-	3.	Download waveform data 
-	4.	Compute coherence
-	5.	Save plots into an output folder
+### The script will:
+1.	Query earthquake event 10976411
+2.	Find nearby stations
+3.	Download waveform data 
+4.	Compute coherence
+5.	Save plots into an output folder
 
 
+### Selecting the Earthquake Event
 
-Selecting the Earthquake Event
-
-Open:
-fdsn_plot.py
-
-Locate:
-DEFAULT_ID = "10976411"
-
-Replace with the desired FDSN event ID.
-
-or 
-
+```
 python fdsn_plot.py --eventid <EVENT_ID>
+```
 
-Output
+### The script will:
+1.	Query earthquake event `<EVENT_ID>`
+2.	Find nearby stations
+3.	Download waveform data 
+4.	Compute coherence
+5.	Save plots into an output folder
 
-Generated plots are saved in:
+---
+## Outputs 
+
+Generated plots are saved placed in a generated directory named:
 event_<EVENT_ID>_plots/
 
-This folder is currently located within the CS472_DEV2_2026 folder
 
 Each station will produce a PNG file:
-
 station_<NETWORK>.<STATION>_coherence.png
 
 Each figure contains:
@@ -80,10 +79,11 @@ Each figure contains:
 •	Bottom panel: sliding-window coherence
 
 How It Works
-	1.	Fetch event metadata (time, location, magnitude)
-	2.	Convert magnitude to search radius
-	3.	Query station inventory
-	4.	Download waveform channels
-	5.	Preprocess signals
-	6.	Compute band-averaged coherence
-	7.	Generate and save plots
+
+1.	Fetch event metadata (time, location, magnitude)
+2.	Convert magnitude to search radius
+3.	Query station inventory
+4.	Download waveform channels
+5.	Preprocess signals
+6.	Compute band-averaged coherence
+7.	Generate and save plots
