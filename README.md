@@ -1,28 +1,39 @@
-AECQAQC Seismic Coherence Plot Tool
+# AECQAQC Seismic Coherence Plot Tool
 
 This project is a Python-based QA/QC tool for comparing seismic waveform data from multiple stations associated with a specific earthquake event. The script queries FDSN web services, retrieves waveform data, computes time-dependent coherence between channels, and generates visualization plots.
-Features
-•	Queries seismic event information using FDSN web services
-•	Automatically selects stations within a radius based on event magnitude
-•	Fetches broadband and strong-motion waveform data
-•	Generates PNG visualization plots including:
-    •	Time series waveform comparison
-    •	Band-averaged coherence vs time
 
-Requirements
-Install Dependencies
-pip install -r requirements.txt
+### Features:
+* Queries seismic event information using FDSN web services
+* Automatically selects stations within a radius based on event magnitude
+* Fetches broadband and strong-motion waveform data
+* Generates PNG visualization plots including:
+    *  Time series waveform comparison
+    *	Band-averaged coherence vs time
+---
+## Install Instructions
+0. **(Optional)** Create and activate a venv environment to run script in
+   - Create venv environment with `python -m venv scipt_env`
+   - Activate venv environment
+		- Windows
+    	```
+    	script_env/Scripts/activate
+    	```
+        - macOS/Linux
+    	```
+		source script_env/bin/activate
+     	``` 
+1. Clone Script form Github Repo:
+	 ```
+	 git clone https://github.com/jdbrough/CS472_DEV2_2026.git
+  	 ```
+  
+1. Install required python libraries from file
+	 ```
+  	 pip install -r requirements.txt
+  	 ```
 
-IMPORTANT: You must activate the project virtual environment (venv) before running the script.
-Activate virtual environment
-
-Mac/Linux:
-source .venv/bin/activate
-
-Windows:
-.venv\Scripts\activate
-
-Running the Script
+---
+## Running the Script
 Basic usage:
 
 python fdsn_plot.py
