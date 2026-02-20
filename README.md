@@ -12,7 +12,10 @@ This project is a Python-based QA/QC tool for comparing seismic waveform data fr
 ---
 ## Install Instructions
 0. **(Optional)** Create and activate a venv environment to run script in
-   - Create venv environment with `python -m venv scipt_env`
+   - Create venv environment with
+     ```
+     python -m venv scipt_env
+     ```
    - Activate venv environment
 		- Windows
     	```
