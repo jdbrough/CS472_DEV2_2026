@@ -21,18 +21,17 @@ def get_station_info(client, station):
     # Check if station exists and has BN*, HN*, BH*, HH* channels
     try:        
         catalog = client.get_stations(
-            network=DEFAULT_NETWORK,
             station=station,
-            level="station",
             channel="BN?,HN?,BH?,HH?"
         )
     except Exception as e:
         print(f"Error fetching station info: {e}")
         sys.exit(1)
 
-    station_info = catalog[0]
-    latitude = station_info.latitude
-    longitude = station_info.longitude
+    for net in catalog:
+        for sta in net:
+            latitude = sta.latitude
+            longitude = sta.longitude
 
     return latitude, longitude
 
@@ -223,7 +222,7 @@ def main():
 
     lat_N, lat_S, long_E, long_W = get_lat_and_long_bounds(st_lat, st_long)
     
-    print(f"Searching stations within {args.radius} degrees...")
+    print(f"Searching events within 4.5 degrees...")
 
     inventory = client.get_events(
         minlatitude=lat_S,
