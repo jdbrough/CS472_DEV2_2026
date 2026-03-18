@@ -12,10 +12,10 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-DEFAULT_MINUTES = 60
+DEFAULT_MINUTES = 5
 DEFAULT_NETWORK = "AK"
 DEFAULT_CLIENT = "IRIS"
-DEFAULT_STATION = "ANMO"
+DEFAULT_STATION = "HDA"
 
 def get_station_info(client, station):
     # Check if station exists and has BN*, HN*, BH*, HH* channels
@@ -38,7 +38,7 @@ def get_station_info(client, station):
 def get_lat_and_long_bounds(lat, long):
     lat_N = lat + 4.5
     lat_S = lat - 4.5
-    long_E = long + 4.5
+    long_E = long + 3.5
     long_W = long - 4.5
 
     return lat_N, lat_S, long_E, long_W
@@ -231,14 +231,12 @@ def main():
         maxlongitude=long_E,
         minmagnitude=2.0,
         maxmagnitude=7.0,
+        starttime=UTCDateTime.now() - 90 * 24 * 3600,  # last 3 months
     )
 
     per_event_data = []
 
     for event in inventory:
-        # Skip events that are too old to have data available
-        if event.origins[0].time < UTCDateTime.now() - 3 * 365 * 24 * 3600:
-            continue
 
         #Skip events that are too far away to have data available using magnitude as a proxy for distance
         ev_lat = event.origins[0].latitude
@@ -250,22 +248,33 @@ def main():
 
         # Certain networks will be identified but the data not publicly accessible so just skip them
         # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
-        st = client.get_waveforms(
-            network=args.network,
-            station=args.station,
-            location="*",
-            channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-            attach_response=True,
-            starttime=event.origins[0].time - 60,
-            endtime=event.origins[0].time + 60 + args.minutes * 60
-        )
-        temp = st.copy()
+        try:
+            id = event.resource_id.id.split('=')[-1]
+        except AttributeError:
+            id = 0
 
-        per_event_data.append(calculate_data(temp, event.id))
+        try:
+            st = client.get_waveforms(
+                network=args.network,
+                station=args.station,
+                location="*",
+                channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
+                attach_response=True,
+                starttime=event.origins[0].time - (args.minutes * 20),
+                endtime=event.origins[0].time + (args.minutes * 40)
+            )
+            temp = st.copy()
+
+            per_event_data.append(calculate_data(temp, id))
+        except Exception as e:
+            continue
 
     if not per_event_data:
         print("No waveform data found for the given parameters.")
         return
+    
+    for entry in per_event_data:
+        print(entry["event_id"])
 
     # Processing
 
