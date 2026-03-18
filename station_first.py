@@ -231,7 +231,6 @@ def main():
         maxlongitude=long_E,
         minmagnitude=2.0,
         maxmagnitude=7.0,
-        client=client,
     )
 
     per_event_data = []
@@ -252,10 +251,13 @@ def main():
         # Certain networks will be identified but the data not publicly accessible so just skip them
         # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
         st = client.get_waveforms(
+            network=args.network,
             station=args.station,
             location="*",
             channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-            attach_response=True
+            attach_response=True,
+            starttime=event.origins[0].time - 60,
+            endtime=event.origins[0].time + 60 + args.minutes * 60
         )
         temp = st.copy()
 
