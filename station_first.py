@@ -235,7 +235,9 @@ def main():
         return
 
     if args.station == DEFAULT_STATION:
-        args.station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
+        temp_station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
+        if temp_station:
+            args.station = temp_station
 
     client = Client(args.client)
 
@@ -319,7 +321,7 @@ def main():
     plt.style.use("ggplot")
     for entry in per_event_data:
         event_name = entry["event_id"]
-        out_png = os.path.join(output_dir, f"station_{event_name}_coherence.png")
+        out_png = os.path.join(output_dir, f"event_{event_name}_coherence.png")
 
         fig, ax_coh = plt.subplots(
             figsize=(12, 6)
