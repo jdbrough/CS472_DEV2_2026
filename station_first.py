@@ -234,6 +234,9 @@ def main():
         print(", ".join(stations))
         return
 
+    if args.station == DEFAULT_STATION:
+        args.station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
+
     client = Client(args.client)
 
     print(f"--- Fetching Data for Station {args.station} ---")
