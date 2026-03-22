@@ -3,19 +3,13 @@
 import argparse
 import os
 import sys
-import subprocess
-from obspy import UTCDateTime
-from obspy.clients.fdsn import Client
-from obspy import Stream
-from scipy.signal import coherence
-import matplotlib.pyplot as plt
 import numpy as np
-
 
 DEFAULT_MINUTES = 5
 DEFAULT_NETWORK = "AK"
 DEFAULT_CLIENT = "IRIS"
 DEFAULT_STATION = "HDA"
+DEFAULT_STATIONS = False
 
 def get_station_info(client, station):
     # Check if station exists and has BN*, HN*, BH*, HH* channels
@@ -142,9 +136,8 @@ def calculate_data(temp, eventID):
     return station_package
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
-    """
-    Time-dependent, band-averaged coherence using Welch averaging.
-    """
+    from scipy.signal import coherence
+    #Time-dependent, band-averaged coherence using Welch averaging.
     nwin  = int(win_len * fs)
     nstep = int(step_len * fs)
     nseg  = int(seg_len * fs)
@@ -189,7 +182,13 @@ def mag_to_range(magnitude):
 
 def main():
     parser = argparse.ArgumentParser(
+        add_help=False,
         description="Query FDSN data and plot waveform to PNG"
+    )
+    parser.add_argument(
+        "-h", "--help",
+        action="store_true",
+        help="Show short help message and exit"
     )
     parser.add_argument(
         "--client",
@@ -207,13 +206,33 @@ def main():
         default = DEFAULT_STATION
     )
     parser.add_argument(
-        "--minutes",
-        type=float,
-        default=DEFAULT_MINUTES,
-        help="Minutes of data to fetch (default: 60)",
+        "--stations",
+        action="store_true",
+        help = "Comma-separated list of FDSN Station Codes (e.g. ANMO,AFI)"
     )
 
     args = parser.parse_args()
+
+    if args.help:
+        print("station_first.py: query FDSN station data and generate coherence plots for a station.")
+        print("Options:")
+        print("  -h, --help      Show this short help message and exit")
+        print("  --client        FDSN Client (default IRIS)")
+        print("  --network       FDSN Network Code (default AK)")
+        print("  --station       Skip the prompt and use a FDSN Station Code")
+        print("  --stations      List available stations with both broadband and strong motion channels for the specified client/network")
+        return
+    
+    from obspy.clients.fdsn import Client
+    if args.stations:
+        print("Available stations with both broadband and strong motion channels:")
+        catalog = Client(args.client).get_stations(network=args.network, station="*", channel="BN?,HN?,BH?,HH?")
+        stations = []
+        for net in catalog:
+            for sta in net:
+                stations.append(sta.code)
+        print(", ".join(stations))
+        return
 
     client = Client(args.client)
 
@@ -223,6 +242,8 @@ def main():
     lat_N, lat_S, long_E, long_W = get_lat_and_long_bounds(st_lat, st_long)
     
     print(f"Searching events within 4.5 degrees...")
+
+    from obspy import UTCDateTime
 
     inventory = client.get_events(
         minlatitude=lat_S,
@@ -260,8 +281,8 @@ def main():
                 location="*",
                 channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
                 attach_response=True,
-                starttime=event.origins[0].time - (args.minutes * 20),
-                endtime=event.origins[0].time + (args.minutes * 40)
+                starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
+                endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
             )
             temp = st.copy()
 
@@ -286,6 +307,7 @@ def main():
         st.taper(max_percentage=0.05)
 
     # Plotting
+    import matplotlib.pyplot as plt
 
     output_dir = f"station_{args.station}_plots"
     if not os.path.exists(output_dir):
