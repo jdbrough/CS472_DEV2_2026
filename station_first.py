@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import csv
 import numpy as np
 
 DEFAULT_MINUTES = 5
@@ -118,7 +119,9 @@ def calculate_data(temp, eventID):
                     "times": times,
                     "values": coh_ts,
                     "label": label,
-                    "avg_coh": avg_coh
+                    "avg_coh": avg_coh,
+                    "top_3_vals": top_3,
+                    "component": comp
                 })
 
         if not coherence_entries:
@@ -374,6 +377,42 @@ def main():
     plt.close(fig)
     
     print(f"Saved compilation plot to {compilation_png}")
+
+    # CSV Formatting and Output
+
+    csv_filename = f"station_{args.station}_coherence_metrics.csv"
+    csv_path = os.path.join(output_dir, csv_filename)
+
+    print(f"---- Exporting coherence metrics to {csv_filename} ----")
+
+    fieldnames = [
+        "Station ID", "Event ID", "Channel Pair", "Component",
+        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
+    ]
+
+    with open(csv_path, mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for entry in per_event_data:
+            event_id = entry["event_id"]
+
+            for coh in entry.get("coherence_entries", []):
+                component_label = coh.get("component", "Unknown")
+                top_vals = coh.get("top_3_vals", [0, 0, 0])
+                while len(top_vals) < 3:
+                    top_vals.append(0.0)
+                
+                writer.writerow({
+                    "Station ID": args.station,
+                    "Event ID": event_id,
+                    "Channel Pair": coh["label"],
+                    "Component": component_label,
+                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
+                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
+                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
+                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
+                })
 
 if __name__ == "__main__":
     main()
