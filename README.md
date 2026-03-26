@@ -4,9 +4,9 @@ This project is a Python-based QA/QC tool for comparing seismic waveform data fr
 
 ## Table of Contents
 
-[Install Instructions](#Install-Instructions)
-[Station First Instructions](#Usage-Instructions-for-station_first.py)
-[Event First Instructions](#Usage-Instructions-for-fdsn_script.py)
+### [Install Instructions](#Install-Instructions)
+### [Station First Instructions](#Usage-Instructions-for-station-first-py)
+### [Event First Instructions](#Usage-Instructions-for-fdsn-script-py)
 
 ### Features:
 * Queries seismic event information using FDSN web services
