@@ -68,11 +68,11 @@ Enter an FDSN Station Code to query for events within a relavent range around th
 5. Saves all of the plots into an output folder
 
 ### Optional flags :
- -h, --help      Show a short help message and exit
-  --client        FDSN Client (default IRIS)
-  --network       FDSN Network Code (default AK)
-  --station       Skip the prompt and use a FDSN Station Code
-  --stations      List available stations with both broadband and strong motion channels for the specified client/network
+*  -h, --help      Show a short help message and exit
+*   --client        FDSN Client (default IRIS)
+*   --network       FDSN Network Code (default AK)
+*   --station       Skip the prompt and use a FDSN Station Code
+*   --stations      List available stations with both broadband and strong motion channels for the specified client/network
 
 
 ---
