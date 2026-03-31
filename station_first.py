@@ -38,7 +38,7 @@ def get_lat_and_long_bounds(lat, long):
 
     return lat_N, lat_S, long_E, long_W
 
-def calculate_data(temp, eventID):
+def calculate_data(temp, event):
     # Group traces by channel prefix (channel minus last character), e.g., 'BH' from 'BHN'
     prefix_map = {}
     for tr in temp:
@@ -127,16 +127,63 @@ def calculate_data(temp, eventID):
         if not coherence_entries:
             # no usable pairs for this station
             continue
+    
+    magnitude = event.magnitudes[0].mag if event.magnitudes else 0.0
+    eventID = event.resource_id.id.split('=')[-1]
+    origin_time = event.origins[0].time
+    ev_lat = event.origins[0].latitude
+    ev_long = event.origins[0].longitude
 
     print(f"Requested {eventID}")
 
     station_package = {
         "event_id": f"{eventID}",
+        "metadata": {
+            "magnitude": magnitude,
+            "time": origin_time,
+            "lat": ev_lat,
+            "long": ev_long
+        },
         "waveforms": temp,
         "coherence_entries": coherence_entries,
     }
 
     return station_package
+
+def export_to_csv(csv_path, per_event_data, station):
+
+    fieldnames = [
+        "Station ID", "Event ID", "Magnitude", "Latitude", "Longitude", "Channel Pair", "Component",
+        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
+    ]
+
+    with open(csv_path, mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for package in per_event_data:
+            event_id = package["event_id"]
+
+            for coh in package.get("coherence_entries", []):
+                component_label = coh.get("component", "Unknown")
+                top_vals = coh.get("top_3_vals", [0, 0, 0])
+                while len(top_vals) < 3:
+                    top_vals.append(0.0)
+                
+                writer.writerow({
+                    "Station ID": station,
+                    "Event ID": event_id,
+                    "Magnitude": package["metadata"]["magnitude"],
+                    "Latitude": package["metadata"]["lat"],
+                    "Longitude": package["metadata"]["long"],
+                    "Channel Pair": coh["label"],
+                    "Component": component_label,
+                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
+                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
+                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
+                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
+                })
+
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
     from scipy.signal import coherence
@@ -294,7 +341,7 @@ def main():
             )
             temp = st.copy()
 
-            per_event_data.append(calculate_data(temp, id))
+            per_event_data.append(calculate_data(temp, event))
         except Exception as e:
             continue
 
@@ -385,34 +432,7 @@ def main():
 
     print(f"---- Exporting coherence metrics to {csv_filename} ----")
 
-    fieldnames = [
-        "Station ID", "Event ID", "Channel Pair", "Component",
-        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
-    ]
-
-    with open(csv_path, mode='w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-        for entry in per_event_data:
-            event_id = entry["event_id"]
-
-            for coh in entry.get("coherence_entries", []):
-                component_label = coh.get("component", "Unknown")
-                top_vals = coh.get("top_3_vals", [0, 0, 0])
-                while len(top_vals) < 3:
-                    top_vals.append(0.0)
-                
-                writer.writerow({
-                    "Station ID": args.station,
-                    "Event ID": event_id,
-                    "Channel Pair": coh["label"],
-                    "Component": component_label,
-                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
-                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
-                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
-                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
-                })
-
+    export_to_csv(csv_path, per_event_data, args.station)
+    
 if __name__ == "__main__":
     main()

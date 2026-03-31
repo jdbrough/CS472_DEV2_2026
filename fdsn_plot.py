@@ -143,7 +143,9 @@ def main():
 
     print(f"--- Fetching Event {args.eventid} ---")
     ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
-
+    event_metadata = {"lat": ev_lat,
+                      "long": ev_long,
+                      "mag": ev_mag}
     #Time starts five minutes before event
     starttime = ev_time - 300
     endtime = ev_time + (args.minutes * 60)
@@ -368,7 +370,7 @@ def main():
     print(f"---- Exporting coherence metrics to {csv_filename} ----")
 
     fieldnames = [
-        "Station ID", "Event ID", "Channel Pair", "Component",
+        "Station ID", "Event ID", "Magnitude", "Latitude", "Longitude", "Channel Pair", "Component",
         "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
     ]
 
@@ -388,6 +390,9 @@ def main():
                 writer.writerow({
                     "Station ID": station_id,
                     "Event ID": args.eventid,
+                    "Magnitude": event_metadata["mag"],
+                    "Latitude": event_metadata["lat"],
+                    "Longitude": event_metadata["long"],
                     "Channel Pair": coh["label"],
                     "Component": component_label,
                     "Coherence Rank 1": f"{top_vals[0]:.4f}",
