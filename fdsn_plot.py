@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 import subprocess
+import csv
 from obspy import UTCDateTime
 from obspy.clients.fdsn import Client
 from obspy import Stream
@@ -142,7 +143,9 @@ def main():
 
     print(f"--- Fetching Event {args.eventid} ---")
     ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
-
+    event_metadata = {"lat": ev_lat,
+                      "long": ev_long,
+                      "mag": ev_mag}
     #Time starts five minutes before event
     starttime = ev_time - 300
     endtime = ev_time + (args.minutes * 60)
@@ -261,7 +264,9 @@ def main():
                                 "times": times,
                                 "values": coh_ts,
                                 "label": label,
-                                "avg_coh": avg_coh
+                                "avg_coh": avg_coh,
+                                "top_3_vals": top_3,
+                                "component": comp
                             })
 
                 if not coherence_entries:
@@ -356,6 +361,45 @@ def main():
     plt.close(fig)
     
     print(f"Saved compilation plot to {compilation_png}")
+
+    # ---- CSV Exporting ----
+
+    csv_filename = f"event_{args.eventid}_coherence_metrics.csv"
+    csv_path = os.path.join(output_dir, csv_filename)
+
+    print(f"---- Exporting coherence metrics to {csv_filename} ----")
+
+    fieldnames = [
+        "Station ID", "Event ID", "Magnitude", "Latitude", "Longitude", "Channel Pair", "Component",
+        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
+    ]
+
+    with open(csv_path, mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for entry in per_station_data:
+            station_id = entry["station_id"]
+
+            for coh in entry.get("coherence_entries", []):
+                component_label = coh.get("component", "Unknown")
+                top_vals = coh.get("top_3_vals", [0, 0, 0])
+                while len(top_vals) < 3:
+                    top_vals.append(0.0)
+                
+                writer.writerow({
+                    "Station ID": station_id,
+                    "Event ID": args.eventid,
+                    "Magnitude": event_metadata["mag"],
+                    "Latitude": event_metadata["lat"],
+                    "Longitude": event_metadata["long"],
+                    "Channel Pair": coh["label"],
+                    "Component": component_label,
+                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
+                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
+                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
+                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
+                })
 
 
 if __name__ == "__main__":
