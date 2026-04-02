@@ -276,7 +276,11 @@ def main():
     from obspy.clients.fdsn import Client
     if args.stations:
         print("Available stations with both broadband and strong motion channels:")
-        catalog = Client(args.client).get_stations(network=args.network, station="*", channel="BN?,HN?,BH?,HH?")
+        try:
+            catalog = Client(args.client).get_stations(network=args.network, station="*", channel="BN?,HN?,BH?,HH?")
+        except Exception as e:
+            print(f"Error fetching station data: {e}")
+            return
         stations = []
         for net in catalog:
             for sta in net:
@@ -289,10 +293,18 @@ def main():
         if temp_station:
             args.station = temp_station
 
-    client = Client(args.client)
+    try:
+        client = Client(args.client)
+    except Exception as e:
+        print(f"Error creating FDSN client: {e}")
+        return
 
     print(f"--- Fetching Data for Station {args.station} ---")
-    st_lat, st_long = get_station_info(client, args.station)
+    try:
+        st_lat, st_long = get_station_info(client, args.station)
+    except Exception as e:
+        print(f"Error fetching station info: {e}")
+        return
 
     lat_N, lat_S, long_E, long_W = get_lat_and_long_bounds(st_lat, st_long)
     
@@ -300,15 +312,19 @@ def main():
 
     from obspy import UTCDateTime
 
-    inventory = client.get_events(
-        minlatitude=lat_S,
-        maxlatitude=lat_N,
-        minlongitude=long_W,
-        maxlongitude=long_E,
-        minmagnitude=2.0,
-        maxmagnitude=7.0,
-        starttime=UTCDateTime.now() - 90 * 24 * 3600,  # last 3 months
-    )
+    try:
+        inventory = client.get_events(
+            minlatitude=lat_S,
+            maxlatitude=lat_N,
+            minlongitude=long_W,
+            maxlongitude=long_E,
+            minmagnitude=2.0,
+            maxmagnitude=7.0,
+            starttime=UTCDateTime.now() - 90 * 24 * 3600,  # last 3 months
+        )
+    except Exception as e:
+        print(f"Error fetching event data: {e}")
+        return
 
     per_event_data = []
 
