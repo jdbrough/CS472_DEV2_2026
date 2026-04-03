@@ -1,3 +1,5 @@
 venv/
 *.png
+*.jpg
+*.jpeg
 *.csv
