@@ -274,9 +274,37 @@ def main():
         return
     
     from obspy.clients.fdsn import Client
+    client = Client(args.client)
+    
     if args.stations:
         print("Available stations with both broadband and strong motion channels:")
-        catalog = Client(args.client).get_stations(network=args.network, station="*", channel="BN?,HN?,BH?,HH?")
+        full_inventory = client.get_stations(
+            network=args.network,
+            station="*",
+            channel="BN?,HN?,BH?,HH?",
+            level="channel"  # Need channel-level detail to inspect what each station has
+        )
+
+        # For each station, check that it has at least one SM AND at least one BB channel
+        sm_prefixes = {"BN", "HN"}
+        bb_prefixes = {"BH", "HH"}
+
+        filtered_networks = []
+
+        for net in full_inventory:
+            filtered_stations = []
+            for sta in net.stations:
+                channel_codes = {cha.code[:2] for cha in sta.channels}
+                has_sm = bool(channel_codes & sm_prefixes)
+                has_bb = bool(channel_codes & bb_prefixes)
+                if has_sm and has_bb:
+                    filtered_stations.append(sta)
+            if filtered_stations:
+                net.stations = filtered_stations
+                filtered_networks.append(net)
+
+        full_inventory.networks = filtered_networks
+        catalog = full_inventory
         stations = []
         for net in catalog:
             for sta in net:
@@ -288,8 +316,6 @@ def main():
         temp_station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
         if temp_station:
             args.station = temp_station
-
-    client = Client(args.client)
 
     print(f"--- Fetching Data for Station {args.station} ---")
     st_lat, st_long = get_station_info(client, args.station)
