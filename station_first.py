@@ -15,10 +15,34 @@ DEFAULT_STATIONS = False
 def get_station_info(client, station):
     # Check if station exists and has BN*, HN*, BH*, HH* channels
     try:        
-        catalog = client.get_stations(
+        full_inventory = client.get_stations(
             station=station,
-            channel="BN?,HN?,BH?,HH?"
+            level="channel"
         )
+
+        # For the station, check that it has at least one SM AND at least one BB channel
+        sm_prefixes = {"BN", "HN"}
+        bb_prefixes = {"BH", "HH"}
+
+        filtered_networks = []
+
+        for net in full_inventory:
+            filtered_stations = []
+            for sta in net.stations:
+                channel_codes = {cha.code[:2] for cha in sta.channels}
+                has_sm = bool(channel_codes & sm_prefixes)
+                has_bb = bool(channel_codes & bb_prefixes)
+                if has_sm and has_bb:
+                    filtered_stations.append(sta)
+                else:
+                    print(f"Station {sta.code} does not have both SM and BB channels, returning.")
+                    sys.exit(1)
+            if filtered_stations:
+                net.stations = filtered_stations
+                filtered_networks.append(net)
+
+        full_inventory.networks = filtered_networks
+        catalog = full_inventory
     except Exception as e:
         print(f"Error fetching station info: {e}")
         sys.exit(1)
@@ -275,7 +299,7 @@ def main():
     
     from obspy.clients.fdsn import Client
     client = Client(args.client)
-    
+
     if args.stations:
         print("Available stations with both broadband and strong motion channels:")
         full_inventory = client.get_stations(
