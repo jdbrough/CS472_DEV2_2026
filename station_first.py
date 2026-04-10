@@ -7,13 +7,12 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 5
-DEFAULT_CLIENT = "EarthScope"
+DEFAULT_CLIENT = "IRIS"
 DEFAULT_NETWORK = "AK"
 DEFAULT_STATION = "HDA"
 DEFAULT_STATIONS = False
 
 def get_station_info(client, station):
-    # Check if station exists and has BN*, HN*, BH*, HH* channels
     try:        
         full_inventory = client.get_stations(
             station=station,
@@ -21,22 +20,16 @@ def get_station_info(client, station):
         )
 
         # For the station, check that it has at least one SM AND at least one BB channel
-        sm_prefixes = {"BN", "HN"}
-        bb_prefixes = {"BH", "HH"}
-
         filtered_networks = []
 
         for net in full_inventory:
             filtered_stations = []
             for sta in net.stations:
-                channel_codes = {cha.code[:2] for cha in sta.channels}
-                has_sm = bool(channel_codes & sm_prefixes)
-                has_bb = bool(channel_codes & bb_prefixes)
+                channel_codes = {cha.code for cha in sta.channels}
+                has_sm = any(code[1] == "N" for code in channel_codes)
+                has_bb = any(code[1] == "H" for code in channel_codes)
                 if has_sm and has_bb:
                     filtered_stations.append(sta)
-                else:
-                    print(f"Station {sta.code} does not have both SM and BB channels, returning.")
-                    sys.exit(1)
             if filtered_stations:
                 net.stations = filtered_stations
                 filtered_networks.append(net)
@@ -303,33 +296,30 @@ def main():
     if args.list:
         print("Available stations with both broadband and strong motion channels:")
         try:
-          full_inventory = client.get_stations(
-              network=args.network,
-              station="*",
-              channel="BN?,HN?,BH?,HH?",
-              level="channel"  # Need channel-level detail to inspect what each station has
-          )
+            full_inventory = client.get_stations(
+                network=args.network,
+                station="*",
+                channel="?N?,?H?",
+                level="channel"
+            )
 
-          # For each station, check that it has at least one SM AND at least one BB channel
-          sm_prefixes = {"BN", "HN"}
-          bb_prefixes = {"BH", "HH"}
+            # For each station, check that it has at least one SM AND at least one BB channel
+            filtered_networks = []
 
-          filtered_networks = []
+            for net in full_inventory:
+                filtered_stations = []
+                for sta in net.stations:
+                    channel_codes = {cha.code for cha in sta.channels}
+                    has_sm = any(code[1] == "N" for code in channel_codes)
+                    has_bb = any(code[1] == "H" for code in channel_codes)
+                    if has_sm and has_bb:
+                        filtered_stations.append(sta)
+                if filtered_stations:
+                    net.stations = filtered_stations
+                    filtered_networks.append(net)
 
-          for net in full_inventory:
-              filtered_stations = []
-              for sta in net.stations:
-                  channel_codes = {cha.code[:2] for cha in sta.channels}
-                  has_sm = bool(channel_codes & sm_prefixes)
-                  has_bb = bool(channel_codes & bb_prefixes)
-                  if has_sm and has_bb:
-                      filtered_stations.append(sta)
-              if filtered_stations:
-                  net.stations = filtered_stations
-                  filtered_networks.append(net)
-
-          full_inventory.networks = filtered_networks
-          catalog = full_inventory
+            full_inventory.networks = filtered_networks
+            catalog = full_inventory
             
         except Exception as e:
             print(f"Error fetching station data: {e}")
@@ -404,7 +394,7 @@ def main():
                 network=args.network,
                 station=args.station,
                 location="*",
-                channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
+                channel="?NN,?NE,?NZ,?HN,?HE,?HZ",
                 starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
                 endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
             )

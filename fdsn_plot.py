@@ -8,7 +8,7 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 10
-DEFAULT_CLIENT = "EarthScope"
+DEFAULT_CLIENT = "IRIS"
 DEFAULT_NETWORK = "AK"
 DEFAULT_ID = "12060740"
 
@@ -122,9 +122,7 @@ def main():
     except Exception as e:
         print(f"Error fetching event info: {e}")
         return
-    event_metadata = {"lat": ev_lat,
-                      "long": ev_long,
-                      "mag": ev_mag}
+    event_metadata = {"lat": ev_lat, "long": ev_long, "mag": ev_mag}
     #Time starts five minutes before event
     starttime = ev_time - 300
     endtime = ev_time + 600
@@ -136,25 +134,21 @@ def main():
 
     try:
         full_inventory = client.get_stations(
-          network=DEFAULT_NETWORK,
-          station="*",
-          channel="BN?,HN?,BH?,HH?",
-          level="channel"  # Need channel-level detail to inspect what each station has
+            network=DEFAULT_NETWORK,
+            station="*",
+            channel="BN?,HN?,BH?,HH?",
+            level="channel"  # Need channel-level detail to inspect what each station has
         )
-      
 
         # For each station, check that it has at least one SM AND at least one BB channel
-        sm_prefixes = {"BN", "HN"}
-        bb_prefixes = {"BH", "HH"}
-
         filtered_networks = []
 
         for net in full_inventory:
             filtered_stations = []
             for sta in net.stations:
-                channel_codes = {cha.code[:2] for cha in sta.channels}
-                has_sm = bool(channel_codes & sm_prefixes)
-                has_bb = bool(channel_codes & bb_prefixes)
+                channel_codes = {cha.code for cha in sta.channels}
+                has_sm = any(code[1] == "N" for code in channel_codes)
+                has_bb = any(code[1] == "H" for code in channel_codes)
                 if has_sm and has_bb:
                     filtered_stations.append(sta)
             if filtered_stations:
