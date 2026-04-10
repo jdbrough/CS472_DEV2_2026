@@ -139,10 +139,18 @@ def main():
         minutes_input = input(f"Enter Minutes default: [{args.minutes}]: ").strip()
         args.minutes = float(minutes_input) if minutes_input else args.minutes
 
-    client = Client(args.client)
+    try:
+        client = Client(args.client)
+    except Exception as e:
+        print(f"Error initializing FDSN client: {e}")
+        return
 
     print(f"--- Fetching Event {args.eventid} ---")
-    ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
+    try:
+        ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
+    except Exception as e:
+        print(f"Error fetching event info: {e}")
+        return
     event_metadata = {"lat": ev_lat,
                       "long": ev_long,
                       "mag": ev_mag}
@@ -154,13 +162,17 @@ def main():
     
     print(f"Searching stations within {args.radius} degrees...")
 
-    inventory = client.get_stations(
-        latitude=ev_lat, 
-        longitude=ev_long, 
-        maxradius=args.radius, 
-        level="station",
-        channel="BN?,HN?,BH?,HH?"
-    )
+    try:
+        inventory = client.get_stations(
+            latitude=ev_lat, 
+            longitude=ev_long, 
+            maxradius=args.radius, 
+            level="station",
+            channel="BN?,HN?,BH?,HH?"
+        )
+    except Exception as e:
+        print(f"Error fetching station inventory: {e}")
+        return
 
     per_station_data = []
 
