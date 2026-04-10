@@ -300,7 +300,7 @@ def main():
     from obspy.clients.fdsn import Client
 
     client = Client(args.client)
-   if args.list:
+    if args.list:
         print("Available stations with both broadband and strong motion channels:")
         try:
           full_inventory = client.get_stations(
