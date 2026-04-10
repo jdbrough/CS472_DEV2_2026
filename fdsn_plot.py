@@ -8,7 +8,7 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 10
-DEFAULT_CLIENT = "IRIS"
+DEFAULT_CLIENT = "EarthScope"
 DEFAULT_NETWORK = "AK"
 DEFAULT_ID = "12060740"
 
@@ -119,7 +119,7 @@ def main():
                       "mag": ev_mag}
     #Time starts five minutes before event
     starttime = ev_time - 300
-    endtime = ev_time + (args.minutes * 60)
+    endtime = ev_time + 600
 
     args.radius = mag_to_range(ev_mag)
     
@@ -150,8 +150,7 @@ def main():
                     location="*",
                     channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
                     starttime=starttime,
-                    endtime=endtime,
-                    attach_response=True
+                    endtime=endtime 
                 )
                 temp = st.copy()
 

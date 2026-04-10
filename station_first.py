@@ -7,7 +7,7 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 5
-DEFAULT_CLIENT = "IRIS"
+DEFAULT_CLIENT = "EarthScope"
 DEFAULT_NETWORK = "AK"
 DEFAULT_STATION = "HDA"
 DEFAULT_STATIONS = False
@@ -335,7 +335,6 @@ def main():
                 station=args.station,
                 location="*",
                 channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-                attach_response=True,
                 starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
                 endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
             )
