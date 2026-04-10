@@ -7,8 +7,8 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 5
-DEFAULT_NETWORK = "AK"
 DEFAULT_CLIENT = "IRIS"
+DEFAULT_NETWORK = "AK"
 DEFAULT_STATION = "HDA"
 DEFAULT_STATIONS = False
 
@@ -241,24 +241,24 @@ def main():
         help="Show short help message and exit"
     )
     parser.add_argument(
-        "--client",
+        "-c", "--client",
         help = "FDSN Client (e.g. IRIS, AK, NCEDC)",
         default = DEFAULT_CLIENT
     )
     parser.add_argument(
-        "--network",
+        "-n", "--network",
         help = "FDSN Network Code (e.g. AK, IRIS)",
         default = DEFAULT_NETWORK
     )
     parser.add_argument(
-        "--station",
+        "-s", "--station",
         help = "FDSN Station Code (e.g. ANMO)",
         default = DEFAULT_STATION
     )
     parser.add_argument(
-        "--stations",
+        "-l", "--list",
         action="store_true",
-        help = "Comma-separated list of FDSN Station Codes (e.g. ANMO,AFI)"
+        help = "List available stations with both broadband and strong motion channels for the specified client/network"
     )
 
     args = parser.parse_args()
@@ -270,11 +270,11 @@ def main():
         print("  --client        FDSN Client (default IRIS)")
         print("  --network       FDSN Network Code (default AK)")
         print("  --station       Skip the prompt and use a FDSN Station Code")
-        print("  --stations      List available stations with both broadband and strong motion channels for the specified client/network")
+        print("  --list      List available stations with both broadband and strong motion channels for the specified client/network")
         return
     
     from obspy.clients.fdsn import Client
-    if args.stations:
+    if args.list:
         print("Available stations with both broadband and strong motion channels:")
         catalog = Client(args.client).get_stations(network=args.network, station="*", channel="BN?,HN?,BH?,HH?")
         stations = []
@@ -284,7 +284,7 @@ def main():
         print(", ".join(stations))
         return
 
-    if args.station == DEFAULT_STATION:
+    if args.station is None:
         temp_station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
         if temp_station:
             args.station = temp_station

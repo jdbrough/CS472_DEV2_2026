@@ -5,41 +5,20 @@ import os
 import sys
 import subprocess
 import csv
-from obspy import UTCDateTime
-from obspy.clients.fdsn import Client
-from obspy import Stream
-from scipy.signal import coherence
-import matplotlib.pyplot as plt
 import numpy as np
 
-
-DEFAULT_ID = "12060740"
 DEFAULT_MINUTES = 10
 DEFAULT_CLIENT = "IRIS"
-
-
-def open_image(path):
-    """Open an image using the default OS viewer (Windows, macOS, Linux, WSL)."""
-    try:
-        # WSL detection
-        if "microsoft" in os.uname().release.lower():
-            # Convert WSL path to Windows path
-            win_path = subprocess.check_output(
-                ["wslpath", "-w", path],
-                text=True
-            ).strip()
-            subprocess.Popen(["explorer.exe", win_path])
-        elif sys.platform.startswith("darwin"):
-            subprocess.Popen(["open", path])
-        elif os.name == "nt":
-            os.startfile(path)
-        else:
-            subprocess.Popen(["xdg-open", path])
-    except Exception as e:
-        print(f"Could not open image automatically: {e}")
+DEFAULT_NETWORK = "AK"
+DEFAULT_ID = "12060740"
 
 def get_event_info(client, event_id):
-    catalog = client.get_events(eventid = event_id)
+    try:
+        catalog = client.get_events(eventid = event_id)
+    except Exception as e:
+        print(f"Error fetching event info: {e}")
+        sys.exit(1)
+
     event = catalog[0]
     origin = event.preferred_origin() or event.origins[0]
     mag_obj = event.preferred_magnitude() or event.magnitudes[0]
@@ -48,9 +27,8 @@ def get_event_info(client, event_id):
     return origin.time, origin.latitude, origin.longitude, magnitude
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
-    """
-    Time-dependent, band-averaged coherence using Welch averaging.
-    """
+    from scipy.signal import coherence
+    #Time-dependent, band-averaged coherence using Welch averaging.
     nwin  = int(win_len * fs)
     nstep = int(step_len * fs)
     nseg  = int(seg_len * fs)
@@ -98,46 +76,38 @@ def main():
         description="Query FDSN data and plot waveform to PNG"
     )
     parser.add_argument(
-        "--eventid",
+        "-h", "--help",
+        action="store_true",
+        help="Show short help message and exit"
+    )
+    parser.add_argument(
+        "-e", "--eventid",
         help = "FDSN Event ID (e.g. 11843205)",
         default = DEFAULT_ID
     )
     parser.add_argument(
-        "--radius",
-        type = float,
-        default = 1.0,
-        help = "Search radius in degrees around epicenter"
-    )
-    parser.add_argument(
-        "--client",
+        "-c", "--client",
         default=DEFAULT_CLIENT,
         help="FDSN client name (default: IRIS)",
-    )
-    parser.add_argument(
-        "--minutes",
-        type=float,
-        default=DEFAULT_MINUTES,
-        help="Minutes of data to fetch (default: 10)",
-    )
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Prompt for SNCL and time window",
     )
 
     args = parser.parse_args()
 
-    # Interactive overrides
-    if args.interactive:
-        args.eventid = input(f"Enter an Event ID default: [{args.eventid}]: ").strip() or args.eventid
-        
-        radius_input = input(f"Enter Search Radius default: [{args.radius}]: ").strip()
-        args.radius = float(radius_input) if radius_input else args.radius
-        
-        args.channel = input(f"Enter Channel default: [{args.channel}]: ").strip() or args.channel
-        
-        minutes_input = input(f"Enter Minutes default: [{args.minutes}]: ").strip()
-        args.minutes = float(minutes_input) if minutes_input else args.minutes
+    if args.help:
+        print("station_first.py: query FDSN station data and generate coherence plots for a station.")
+        print("Options:")
+        print("  -h, --help      Show this short help message and exit")
+        print("  --client        FDSN Client (default IRIS)")
+        print("  --network       FDSN Network Code (default AK)")
+        print("  --station       Skip the prompt and use a FDSN Station Code")
+        print("  --stations      List available stations with both broadband and strong motion channels for the specified client/network")
+        return
+
+    from obspy.clients.fdsn import Client
+    if args.eventid is None:
+        temp_event = input("Enter a FDSN Event ID (e.g. 11843205): ").strip()
+        if temp_event:
+            args.eventid = temp_event
 
     client = Client(args.client)
 
@@ -300,6 +270,7 @@ def main():
         st.taper(max_percentage=0.05)
 
     # Plotting
+    import matplotlib.pyplot as plt
 
     output_dir = f"event_{args.eventid}_plots"
     if not os.path.exists(output_dir):
