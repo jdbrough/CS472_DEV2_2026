@@ -73,6 +73,7 @@ def mag_to_range(magnitude):
 
 def main():
     parser = argparse.ArgumentParser(
+        add_help=False,
         description="Query FDSN data and plot waveform to PNG"
     )
     parser.add_argument(
@@ -104,7 +105,7 @@ def main():
         return
 
     from obspy.clients.fdsn import Client
-    if args.eventid is None:
+    if args.eventid == DEFAULT_ID:
         temp_event = input("Enter a FDSN Event ID (e.g. 11843205): ").strip()
         if temp_event:
             args.eventid = temp_event

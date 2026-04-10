@@ -284,7 +284,7 @@ def main():
         print(", ".join(stations))
         return
 
-    if args.station is None:
+    if args.station == DEFAULT_STATION:
         temp_station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
         if temp_station:
             args.station = temp_station
