@@ -7,8 +7,8 @@ import csv
 import numpy as np
 
 DEFAULT_MINUTES = 5
+DEFAULT_CLIENT = "EarthScope"
 DEFAULT_NETWORK = "AK"
-DEFAULT_CLIENT = "IRIS"
 DEFAULT_STATION = "HDA"
 DEFAULT_STATIONS = False
 
@@ -265,24 +265,24 @@ def main():
         help="Show short help message and exit"
     )
     parser.add_argument(
-        "--client",
+        "-c", "--client",
         help = "FDSN Client (e.g. IRIS, AK, NCEDC)",
         default = DEFAULT_CLIENT
     )
     parser.add_argument(
-        "--network",
+        "-n", "--network",
         help = "FDSN Network Code (e.g. AK, IRIS)",
         default = DEFAULT_NETWORK
     )
     parser.add_argument(
-        "--station",
+        "-s", "--station",
         help = "FDSN Station Code (e.g. ANMO)",
         default = DEFAULT_STATION
     )
     parser.add_argument(
-        "--stations",
+        "-l", "--list",
         action="store_true",
-        help = "Comma-separated list of FDSN Station Codes (e.g. ANMO,AFI)"
+        help = "List available stations with both broadband and strong motion channels for the specified client/network"
     )
 
     args = parser.parse_args()
@@ -294,41 +294,47 @@ def main():
         print("  --client        FDSN Client (default IRIS)")
         print("  --network       FDSN Network Code (default AK)")
         print("  --station       Skip the prompt and use a FDSN Station Code")
-        print("  --stations      List available stations with both broadband and strong motion channels for the specified client/network")
+        print("  --list      List available stations with both broadband and strong motion channels for the specified client/network")
         return
     
     from obspy.clients.fdsn import Client
+
     client = Client(args.client)
-
-    if args.stations:
+   if args.list:
         print("Available stations with both broadband and strong motion channels:")
-        full_inventory = client.get_stations(
-            network=args.network,
-            station="*",
-            channel="BN?,HN?,BH?,HH?",
-            level="channel"  # Need channel-level detail to inspect what each station has
-        )
+        try:
+          full_inventory = client.get_stations(
+              network=args.network,
+              station="*",
+              channel="BN?,HN?,BH?,HH?",
+              level="channel"  # Need channel-level detail to inspect what each station has
+          )
 
-        # For each station, check that it has at least one SM AND at least one BB channel
-        sm_prefixes = {"BN", "HN"}
-        bb_prefixes = {"BH", "HH"}
+          # For each station, check that it has at least one SM AND at least one BB channel
+          sm_prefixes = {"BN", "HN"}
+          bb_prefixes = {"BH", "HH"}
 
-        filtered_networks = []
+          filtered_networks = []
 
-        for net in full_inventory:
-            filtered_stations = []
-            for sta in net.stations:
-                channel_codes = {cha.code[:2] for cha in sta.channels}
-                has_sm = bool(channel_codes & sm_prefixes)
-                has_bb = bool(channel_codes & bb_prefixes)
-                if has_sm and has_bb:
-                    filtered_stations.append(sta)
-            if filtered_stations:
-                net.stations = filtered_stations
-                filtered_networks.append(net)
+          for net in full_inventory:
+              filtered_stations = []
+              for sta in net.stations:
+                  channel_codes = {cha.code[:2] for cha in sta.channels}
+                  has_sm = bool(channel_codes & sm_prefixes)
+                  has_bb = bool(channel_codes & bb_prefixes)
+                  if has_sm and has_bb:
+                      filtered_stations.append(sta)
+              if filtered_stations:
+                  net.stations = filtered_stations
+                  filtered_networks.append(net)
 
-        full_inventory.networks = filtered_networks
-        catalog = full_inventory
+          full_inventory.networks = filtered_networks
+          catalog = full_inventory
+            
+        except Exception as e:
+            print(f"Error fetching station data: {e}")
+            return
+
         stations = []
         for net in catalog:
             for sta in net:
@@ -341,8 +347,18 @@ def main():
         if temp_station:
             args.station = temp_station
 
+    try:
+        client = Client(args.client)
+    except Exception as e:
+        print(f"Error creating FDSN client: {e}")
+        return
+
     print(f"--- Fetching Data for Station {args.station} ---")
-    st_lat, st_long = get_station_info(client, args.station)
+    try:
+        st_lat, st_long = get_station_info(client, args.station)
+    except Exception as e:
+        print(f"Error fetching station info: {e}")
+        return
 
     lat_N, lat_S, long_E, long_W = get_lat_and_long_bounds(st_lat, st_long)
     
@@ -350,15 +366,19 @@ def main():
 
     from obspy import UTCDateTime
 
-    inventory = client.get_events(
-        minlatitude=lat_S,
-        maxlatitude=lat_N,
-        minlongitude=long_W,
-        maxlongitude=long_E,
-        minmagnitude=2.0,
-        maxmagnitude=7.0,
-        starttime=UTCDateTime.now() - 90 * 24 * 3600,  # last 3 months
-    )
+    try:
+        inventory = client.get_events(
+            minlatitude=lat_S,
+            maxlatitude=lat_N,
+            minlongitude=long_W,
+            maxlongitude=long_E,
+            minmagnitude=2.0,
+            maxmagnitude=7.0,
+            starttime=UTCDateTime.now() - 90 * 24 * 3600,  # last 3 months
+        )
+    except Exception as e:
+        print(f"Error fetching event data: {e}")
+        return
 
     per_event_data = []
 
@@ -385,7 +405,6 @@ def main():
                 station=args.station,
                 location="*",
                 channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-                attach_response=True,
                 starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
                 endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
             )

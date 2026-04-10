@@ -5,41 +5,20 @@ import os
 import sys
 import subprocess
 import csv
-from obspy import UTCDateTime
-from obspy.clients.fdsn import Client
-from obspy import Stream
-from scipy.signal import coherence
-import matplotlib.pyplot as plt
 import numpy as np
 
-
-DEFAULT_ID = "12060740"
 DEFAULT_MINUTES = 10
-DEFAULT_CLIENT = "IRIS"
-
-
-def open_image(path):
-    """Open an image using the default OS viewer (Windows, macOS, Linux, WSL)."""
-    try:
-        # WSL detection
-        if "microsoft" in os.uname().release.lower():
-            # Convert WSL path to Windows path
-            win_path = subprocess.check_output(
-                ["wslpath", "-w", path],
-                text=True
-            ).strip()
-            subprocess.Popen(["explorer.exe", win_path])
-        elif sys.platform.startswith("darwin"):
-            subprocess.Popen(["open", path])
-        elif os.name == "nt":
-            os.startfile(path)
-        else:
-            subprocess.Popen(["xdg-open", path])
-    except Exception as e:
-        print(f"Could not open image automatically: {e}")
+DEFAULT_CLIENT = "EarthScope"
+DEFAULT_NETWORK = "AK"
+DEFAULT_ID = "12060740"
 
 def get_event_info(client, event_id):
-    catalog = client.get_events(eventid = event_id)
+    try:
+        catalog = client.get_events(eventid = event_id)
+    except Exception as e:
+        print(f"Error fetching event info: {e}")
+        sys.exit(1)
+
     event = catalog[0]
     origin = event.preferred_origin() or event.origins[0]
     mag_obj = event.preferred_magnitude() or event.magnitudes[0]
@@ -48,9 +27,8 @@ def get_event_info(client, event_id):
     return origin.time, origin.latitude, origin.longitude, magnitude
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
-    """
-    Time-dependent, band-averaged coherence using Welch averaging.
-    """
+    from scipy.signal import coherence
+    #Time-dependent, band-averaged coherence using Welch averaging.
     nwin  = int(win_len * fs)
     nstep = int(step_len * fs)
     nseg  = int(seg_len * fs)
@@ -95,93 +73,101 @@ def mag_to_range(magnitude):
 
 def main():
     parser = argparse.ArgumentParser(
+        add_help=False,
         description="Query FDSN data and plot waveform to PNG"
     )
     parser.add_argument(
-        "--eventid",
+        "-h", "--help",
+        action="store_true",
+        help="Show short help message and exit"
+    )
+    parser.add_argument(
+        "-e", "--eventid",
         help = "FDSN Event ID (e.g. 11843205)",
         default = DEFAULT_ID
     )
     parser.add_argument(
-        "--radius",
-        type = float,
-        default = 1.0,
-        help = "Search radius in degrees around epicenter"
-    )
-    parser.add_argument(
-        "--client",
+        "-c", "--client",
         default=DEFAULT_CLIENT,
         help="FDSN client name (default: IRIS)",
-    )
-    parser.add_argument(
-        "--minutes",
-        type=float,
-        default=DEFAULT_MINUTES,
-        help="Minutes of data to fetch (default: 10)",
-    )
-    parser.add_argument(
-        "--interactive",
-        action="store_true",
-        help="Prompt for SNCL and time window",
     )
 
     args = parser.parse_args()
 
-    # Interactive overrides
-    if args.interactive:
-        args.eventid = input(f"Enter an Event ID default: [{args.eventid}]: ").strip() or args.eventid
-        
-        radius_input = input(f"Enter Search Radius default: [{args.radius}]: ").strip()
-        args.radius = float(radius_input) if radius_input else args.radius
-        
-        args.channel = input(f"Enter Channel default: [{args.channel}]: ").strip() or args.channel
-        
-        minutes_input = input(f"Enter Minutes default: [{args.minutes}]: ").strip()
-        args.minutes = float(minutes_input) if minutes_input else args.minutes
+    if args.help:
+        print("station_first.py: query FDSN station data and generate coherence plots for a station.")
+        print("Options:")
+        print("  -h, --help      Show this short help message and exit")
+        print("  --client        FDSN Client (default IRIS)")
+        print("  --network       FDSN Network Code (default AK)")
+        print("  --station       Skip the prompt and use a FDSN Station Code")
+        print("  --stations      List available stations with both broadband and strong motion channels for the specified client/network")
+        return
 
-    client = Client(args.client)
+    from obspy.clients.fdsn import Client
+    if args.eventid == DEFAULT_ID:
+        temp_event = input("Enter a FDSN Event ID (e.g. 11843205): ").strip()
+        if temp_event:
+            args.eventid = temp_event
+
+    try:
+        client = Client(args.client)
+    except Exception as e:
+        print(f"Error initializing FDSN client: {e}")
+        return
 
     print(f"--- Fetching Event {args.eventid} ---")
-    ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
+    try:
+        ev_time, ev_lat, ev_long, ev_mag = get_event_info(client, args.eventid)
+    except Exception as e:
+        print(f"Error fetching event info: {e}")
+        return
     event_metadata = {"lat": ev_lat,
                       "long": ev_long,
                       "mag": ev_mag}
     #Time starts five minutes before event
     starttime = ev_time - 300
-    endtime = ev_time + (args.minutes * 60)
+    endtime = ev_time + 600
 
     args.radius = mag_to_range(ev_mag)
     
     print(f"Searching stations within {args.radius} degrees...")
 
-    full_inventory = client.get_stations(
-        network=args.network,
-        station="*",
-        channel="BN?,HN?,BH?,HH?",
-        level="channel"  # Need channel-level detail to inspect what each station has
-    )
 
-    # For each station, check that it has at least one SM AND at least one BB channel
-    sm_prefixes = {"BN", "HN"}
-    bb_prefixes = {"BH", "HH"}
+     try:
+        full_inventory = client.get_stations(
+          network=args.network,
+          station="*",
+          channel="BN?,HN?,BH?,HH?",
+          level="channel"  # Need channel-level detail to inspect what each station has
+        )
+      
 
-    filtered_networks = []
+      # For each station, check that it has at least one SM AND at least one BB channel
+      sm_prefixes = {"BN", "HN"}
+      bb_prefixes = {"BH", "HH"}
 
-    for net in full_inventory:
-        filtered_stations = []
-        for sta in net.stations:
-            channel_codes = {cha.code[:2] for cha in sta.channels}
-            has_sm = bool(channel_codes & sm_prefixes)
-            has_bb = bool(channel_codes & bb_prefixes)
-            if has_sm and has_bb:
-                filtered_stations.append(sta)
-        if filtered_stations:
-            net.stations = filtered_stations
-            filtered_networks.append(net)
+      filtered_networks = []
 
-    full_inventory.networks = filtered_networks
-    inventory = full_inventory
+      for net in full_inventory:
+          filtered_stations = []
+          for sta in net.stations:
+              channel_codes = {cha.code[:2] for cha in sta.channels}
+              has_sm = bool(channel_codes & sm_prefixes)
+              has_bb = bool(channel_codes & bb_prefixes)
+              if has_sm and has_bb:
+                  filtered_stations.append(sta)
+          if filtered_stations:
+              net.stations = filtered_stations
+              filtered_networks.append(net)
 
+      full_inventory.networks = filtered_networks
+      inventory = full_inventory
+    
+    except Exception as e:
+        print(f"Error fetching station inventory: {e}")
+        return
+    
     per_station_data = []
 
     included_networks = ['AK']
@@ -199,8 +185,7 @@ def main():
                     location="*",
                     channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
                     starttime=starttime,
-                    endtime=endtime,
-                    attach_response=True
+                    endtime=endtime 
                 )
                 temp = st.copy()
 
@@ -320,6 +305,7 @@ def main():
         st.taper(max_percentage=0.05)
 
     # Plotting
+    import matplotlib.pyplot as plt
 
     output_dir = f"event_{args.eventid}_plots"
     if not os.path.exists(output_dir):
