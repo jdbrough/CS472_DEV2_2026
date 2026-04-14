@@ -299,7 +299,7 @@ def main():
             full_inventory = client.get_stations(
                 network=args.network,
                 station="*",
-                channel="?N?,?H?",
+                channel="BN?,BH?,HN?,HH?",
                 level="channel"
             )
 
@@ -394,7 +394,7 @@ def main():
                 network=args.network,
                 station=args.station,
                 location="*",
-                channel="?NN,?NE,?NZ,?HN,?HE,?HZ",
+                channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
                 starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
                 endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
             )
