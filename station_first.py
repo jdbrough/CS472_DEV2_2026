@@ -283,11 +283,11 @@ def main():
     if args.help:
         print("station_first.py: query FDSN station data and generate coherence plots for a station.")
         print("Options:")
-        print("  -h, --help      Show this short help message and exit")
-        print("  --client        FDSN Client (default IRIS)")
-        print("  --network       FDSN Network Code (default AK)")
-        print("  --station       Skip the prompt and use a FDSN Station Code")
-        print("  --list      List available stations with both broadband and strong motion channels for the specified client/network")
+        print("  -h, --help          Show this short help message and exit")
+        print("  -c, --client        FDSN Client (default IRIS)")
+        print("  -n, --network       FDSN Network Code (default AK)")
+        print("  -s, --station       Skip the prompt and use a FDSN Station Code")
+        print("  -l, --list          List available stations with both broadband and strong motion channels for the specified client/network")
         return
     
     from obspy.clients.fdsn import Client
