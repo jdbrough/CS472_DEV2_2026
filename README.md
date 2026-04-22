@@ -51,7 +51,7 @@ This project is a Python-based QA/QC tool for comparing seismic waveform data fr
 
 ### Basic usage : 
 ```
-python station_first.py
+./station_first.py
 ```
 
 You should then be prompted with the following: 
@@ -68,11 +68,11 @@ Enter an FDSN Station Code to query for events within a relavent range around th
 5. Saves all of the plots into an output folder
 
 ### Optional flags :
-*  -h, --help      Show a short help message and exit
-*   --client        FDSN Client (default IRIS)
-*   --network       FDSN Network Code (default AK)
-*   --station       Skip the prompt and use a FDSN Station Code
-*   --stations      List available stations with both broadband and strong motion channels for the specified client/network
+*  -h, --help          Show a short help message and exit
+*  -c, --client        FDSN Client (default IRIS)
+*  -m, --network       FDSN Network Code (default AK)
+*  -s, --station       Skip the prompt and use a FDSN Station Code
+*  -l, --list          List available stations with both broadband and strong motion channels for the specified client/network
 
 
 ---
@@ -80,7 +80,7 @@ Enter an FDSN Station Code to query for events within a relavent range around th
 
 ### Basic usage :
 ```
-python fdsn_plot.py
+./fdsn_plot.py
 ```
 
 ### The script will:
@@ -103,6 +103,11 @@ python fdsn_plot.py --eventid <EVENT_ID>
 3.	Download waveform data 
 4.	Compute coherence
 5.	Save plots into an output folder
+
+### Optional flags :
+*  -h, --help          Show a short help message and exit
+*  -e, --eventid       FDSN Event ID (e.g. 11843205)
+*  -c, --client        FDSN Client (default IRIS)
 
 ---
 ## fdsn_plot.py Outputs 
