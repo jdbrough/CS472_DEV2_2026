@@ -277,8 +277,18 @@ def main():
         action="store_true",
         help = "List available stations with both broadband and strong motion channels for the specified client/network"
     )
+    parser.add_argument(
+        "station_pos",
+        nargs="?",  # optional positional
+        default=None,
+        metavar="STATION",
+        help="FDSN Station Code (positional shorthand for -s)"
+    )
 
     args = parser.parse_args()
+
+    if args.station_pos is not None:
+        args.station = args.station_pos.strip().upper()
 
     if args.help:
         print("station_first.py: query FDSN station data and generate coherence plots for a station.")

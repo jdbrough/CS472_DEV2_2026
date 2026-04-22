@@ -91,8 +91,18 @@ def main():
         default=DEFAULT_CLIENT,
         help="FDSN client name (default: IRIS)",
     )
+    parser.add_argument(
+        "eventid_pos",
+        nargs="?",  # optional positional
+        default=None,
+        metavar="EVENTID",
+        help="FDSN Event ID (positional shorthand for -e)"
+    )
 
     args = parser.parse_args()
+
+    if args.eventid_pos is not None:
+        args.eventid = args.eventid_pos.strip()
 
     if args.help:
         print("station_first.py: query FDSN station data and generate coherence plots for a station.")
