@@ -342,7 +342,8 @@ def main():
         print(", ".join(stations))
         return
 
-    if args.station == DEFAULT_STATION:
+    station_flag_provided = "-s" in sys.argv or "--station" in sys.argv
+    if args.station == DEFAULT_STATION and not station_flag_provided and args.station_pos is None:
         temp_station = input("Enter a FDSN Station Code (e.g. HDA): ").strip().upper()
         if temp_station:
             args.station = temp_station

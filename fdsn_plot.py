@@ -113,7 +113,8 @@ def main():
         return
 
     from obspy.clients.fdsn import Client
-    if args.eventid == DEFAULT_ID:
+    eventid_flag_provided = "-e" in sys.argv or "--eventid" in sys.argv
+    if args.eventid == DEFAULT_ID and not eventid_flag_provided and args.eventid_pos is None:
         temp_event = input("Enter a FDSN Event ID (e.g. 11843205): ").strip()
         if temp_event:
             args.eventid = temp_event
