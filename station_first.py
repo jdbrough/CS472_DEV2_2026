@@ -5,6 +5,9 @@ import os
 import sys
 import csv
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 DEFAULT_MINUTES = 5
 DEFAULT_CLIENT = "IRIS"
@@ -247,6 +250,57 @@ def mag_to_range(magnitude):
 
     return radius_deg
 
+def fetch_event(event, client, args, st_lat, st_long):
+    ev_lat = event.origins[0].latitude
+    ev_long = event.origins[0].longitude
+    magnitude = event.magnitudes[0].mag
+    radius_deg = mag_to_range(magnitude)
+
+    if abs(ev_lat - st_lat) > radius_deg or abs(ev_long - st_long) > radius_deg:
+        return None
+
+    try:
+        id = event.resource_id.id.split('=')[-1]
+    except AttributeError:
+        id = 0
+
+    try:
+        st = client.get_waveforms(
+            network=args.network,
+            station=args.station,
+            location="*",
+            channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
+            starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
+            endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
+        )
+        temp = st.copy()
+        return calculate_data(temp, event)
+    except Exception:
+        return None
+
+def plot_event(entry, output_dir, station):
+    event_name = entry["event_id"]
+    out_png = os.path.join(output_dir, f"event_{event_name}_coherence.png")
+
+    fig, ax_coh = plt.subplots(figsize=(12, 6))
+    for coh in entry.get("coherence_entries", []):
+        ax_coh.plot(
+            coh["times"],
+            coh["values"],
+            lw=1.2,
+            label=f"{coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
+        )
+    ax_coh.set_xlabel("Time since start (s)")
+    ax_coh.set_ylabel("Coherence")
+    ax_coh.set_ylim(0, 1.05)
+    ax_coh.set_title(f"Station {station}, Event {entry['event_id']}: Coherence")
+    ax_coh.grid(True)
+    ax_coh.legend(fontsize="x-small")
+
+    fig.savefig(out_png, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved coherence plot to {out_png}")
+
 def main():
     parser = argparse.ArgumentParser(
         add_help=False,
@@ -382,37 +436,14 @@ def main():
 
     per_event_data = []
 
-    for event in inventory:
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        #Skip events that are too far away to have data available using magnitude as a proxy for distance
-        ev_lat = event.origins[0].latitude
-        ev_long = event.origins[0].longitude
-        magnitude = event.magnitudes[0].mag
-        radius_deg = mag_to_range(magnitude)
-        if abs(ev_lat - st_lat) > radius_deg or abs(ev_long - st_long) > radius_deg:
-            continue
-
-        # Certain networks will be identified but the data not publicly accessible so just skip them
-        # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
-        try:
-            id = event.resource_id.id.split('=')[-1]
-        except AttributeError:
-            id = 0
-
-        try:
-            st = client.get_waveforms(
-                network=args.network,
-                station=args.station,
-                location="*",
-                channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-                starttime=event.origins[0].time - (DEFAULT_MINUTES * 20),
-                endtime=event.origins[0].time + (DEFAULT_MINUTES * 40)
-            )
-            temp = st.copy()
-
-            per_event_data.append(calculate_data(temp, event))
-        except Exception as e:
-            continue
+    with ThreadPoolExecutor(max_workers=min(len(inventory), 16)) as executor:
+        futures = {executor.submit(fetch_event, event, client, args, st_lat, st_long): event for event in inventory}
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                per_event_data.append(result)
 
     if not per_event_data:
         print("No waveform data found for the given parameters.")
@@ -422,7 +453,6 @@ def main():
         print(entry["event_id"])
 
     # Processing
-
     for entry in per_event_data:
         st = entry["waveforms"]
         st.merge(method=1, fill_value='interpolate')
@@ -431,42 +461,36 @@ def main():
         st.taper(max_percentage=0.05)
 
     # Plotting
-    import matplotlib.pyplot as plt
-
     output_dir = f"station_{args.station}_plots"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
-    
+
     plt.style.use("ggplot")
+
+    with ThreadPoolExecutor(max_workers=min(len(per_event_data), 16)) as executor:
+        futures = [executor.submit(plot_event, entry, output_dir, args.station) for entry in per_event_data]
+        for future in as_completed(futures):
+            future.result()  # Re-raises any exceptions from workers
+
+    fig, ax_comp = plt.subplots(figsize=(14, 8))
     for entry in per_event_data:
-        event_name = entry["event_id"]
-        out_png = os.path.join(output_dir, f"event_{event_name}_coherence.png")
-
-        fig, ax_coh = plt.subplots(
-            figsize=(12, 6)
-        )
-
-        # ---- Coherence vs time ----
+        event_id = entry["event_id"]
         for coh in entry.get("coherence_entries", []):
-            ax_coh.plot(
+            ax_comp.plot(
                 coh["times"],
                 coh["values"],
-                lw=1.2,
-                label=f"{coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
+                lw=1.0,
+                label=f"{event_id}: {coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
             )
-
-        ax_coh.set_xlabel("Time since start (s)")
-        ax_coh.set_ylabel("Coherence")
-        ax_coh.set_ylim(0, 1.05)
-        ax_coh.set_title(f"Station {args.station}, Event {entry['event_id']}: Coherence")
-        ax_coh.grid(True)
-        ax_coh.legend(fontsize="x-small")
-
-        # ---- Save and show ----
-        plt.savefig(out_png, dpi=200, bbox_inches="tight")
-        plt.close(fig)
-
-        print(f"Saved coherence plot to {out_png}")
+    ax_comp.set_xlabel("Time since start (s)")
+    ax_comp.set_ylabel("Coherence")
+    ax_comp.set_ylim(0, 1.05)
+    ax_comp.set_title(f"Station {args.station}: All Station Coherence Compilation")
+    ax_comp.grid(True)
+    ax_comp.legend(fontsize="x-small", loc="best")
+    compilation_png = os.path.join(output_dir, f"station_{args.station}_coherence_compilation.png")
+    fig.savefig(compilation_png, dpi=200, bbox_inches="tight")
+    plt.close(fig)
 
     # Compilation plot - all coherence data together
     fig, ax_comp = plt.subplots(figsize=(14, 8))
@@ -494,11 +518,9 @@ def main():
     
     print(f"Saved compilation plot to {compilation_png}")
 
-    # CSV Formatting and Output
-
+    # CSV Export
     csv_filename = f"station_{args.station}_coherence_metrics.csv"
     csv_path = os.path.join(output_dir, csv_filename)
-
     print(f"---- Exporting coherence metrics to {csv_filename} ----")
 
     export_to_csv(csv_path, per_event_data, args.station)
