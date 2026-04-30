@@ -3,9 +3,11 @@
 import argparse
 import os
 import sys
-import subprocess
 import csv
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 
 DEFAULT_MINUTES = 10
 DEFAULT_CLIENT = "IRIS"
@@ -25,6 +27,37 @@ def get_event_info(client, event_id):
     magnitude = mag_obj.mag
 
     return origin.time, origin.latitude, origin.longitude, magnitude
+
+def export_to_csv(csv_path, per_station_data, eventid, event_metadata):
+
+    fieldnames = [
+        "Station ID", "Event ID", "Magnitude", "Latitude", "Longitude",
+        "Channel Pair", "Component",
+        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
+    ]
+
+    with open(csv_path, mode='w', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        for entry in per_station_data:
+            station_id = entry["station_id"]
+            for coh in entry.get("coherence_entries", []):
+                top_vals = coh.get("top_3_vals", [])
+                while len(top_vals) < 3:
+                    top_vals.append(0.0)
+                writer.writerow({
+                    "Station ID": station_id,
+                    "Event ID": eventid,
+                    "Magnitude": event_metadata["mag"],
+                    "Latitude": event_metadata["lat"],
+                    "Longitude": event_metadata["long"],
+                    "Channel Pair": coh["label"],
+                    "Component": coh.get("component", "Unknown"),
+                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
+                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
+                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
+                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
+                })
 
 def sliding_coherence(x, y, fs, win_len, step_len, seg_len, fmin, fmax):
     from scipy.signal import coherence
@@ -62,14 +95,134 @@ def mag_to_range(magnitude):
         dist_km = 300
     elif magnitude >= 4:
         dist_km = 200
-    elif magnitude >= 3:
-        dist_km = 100
     else:
         dist_km = 100
 
-    radius_deg = round((dist_km / 111.19), 2)
+    return round((dist_km / 111.19), 2)
 
-    return radius_deg
+def fetch_station(client, network_code, station, starttime, endtime):
+    """Fetch and process waveforms for a single station. Returns a station package or None."""
+    try:
+        st = client.get_waveforms(
+            network=network_code,
+            station=station.code,
+            location="*",
+            channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
+            starttime=starttime,
+            endtime=endtime
+        )
+        temp = st.copy()
+
+        prefix_map = {}
+        for tr in temp:
+            ch = tr.stats.channel
+            if not ch:
+                continue
+            comp = ch[-1].upper()
+            prefix = ch[:-1]
+            if prefix not in prefix_map:
+                prefix_map[prefix] = {}
+            prefix_map[prefix][comp] = tr
+
+        coherence_entries = []
+
+        comp_map = {}
+        for prefix, comps in prefix_map.items():
+            for comp, tr in comps.items():
+                comp_map.setdefault(comp, []).append((prefix, tr))
+
+        for comp, tr_list in comp_map.items():
+            if len(tr_list) < 2:
+                continue
+            for i in range(len(tr_list)):
+                for j in range(i + 1, len(tr_list)):
+                    pref_a, tr_a = tr_list[i]
+                    pref_b, tr_b = tr_list[j]
+                    tr_a = tr_a.copy()
+                    tr_b = tr_b.copy()
+                    try:
+                        tr_a.remove_response(output="VEL", water_level=60)
+                    except Exception:
+                        pass
+                    try:
+                        tr_b.remove_response(output="VEL", water_level=60)
+                    except Exception:
+                        pass
+
+                    for tr in (tr_a, tr_b):
+                        tr.detrend("demean")
+                        tr.detrend("linear")
+                        tr.taper(0.05)
+
+                    fs = min(tr_a.stats.sampling_rate, tr_b.stats.sampling_rate)
+
+                    try:
+                        tr_a.resample(fs)
+                        tr_b.resample(fs)
+                    except Exception:
+                        pass
+
+                    start = max(tr_a.stats.starttime, tr_b.stats.starttime)
+                    end = min(tr_a.stats.endtime, tr_b.stats.endtime)
+                    if end <= start:
+                        continue
+
+                    tr_a.trim(start, end)
+                    tr_b.trim(start, end)
+
+                    times, coh_ts, top_3 = sliding_coherence(
+                        tr_a.data, tr_b.data,
+                        fs=fs,
+                        win_len=60.0, step_len=5.0, seg_len=10.0,
+                        fmin=0.5, fmax=5.0
+                    )
+
+                    avg_coh = sum(top_3) / len(top_3) if top_3 else 0
+                    label = f"{tr_a.id} vs {tr_b.id}"
+                    coherence_entries.append({
+                        "times": times,
+                        "values": coh_ts,
+                        "label": label,
+                        "avg_coh": avg_coh,
+                        "top_3_vals": top_3,
+                        "component": comp
+                    })
+
+        if not coherence_entries:
+            return None
+
+        print(f"Requested {network_code}.{station.code}...")
+        return {
+            "station_id": f"{network_code}.{station.code}",
+            "waveforms": temp,
+            "coherence_entries": coherence_entries,
+        }
+
+    except Exception:
+        return None
+
+def plot_station(entry, output_dir, event_id):
+    """Render and save the per-station coherence plot."""
+    station_name = entry["station_id"]
+    out_png = os.path.join(output_dir, f"station_{station_name}_coherence.png")
+
+    fig, ax_coh = plt.subplots(figsize=(12, 6))
+    for coh in entry.get("coherence_entries", []):
+        ax_coh.plot(
+            coh["times"], coh["values"],
+            lw=1.2,
+            label=f"{coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
+        )
+    ax_coh.set_xlabel("Time since start (s)")
+    ax_coh.set_ylabel("Coherence")
+    ax_coh.set_ylim(0, 1.05)
+    ax_coh.set_title(f"Event {event_id}, Station {station_name}: Coherence")
+    ax_coh.grid(True)
+    ax_coh.legend(fontsize="x-small")
+
+    fig.savefig(out_png, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Saved coherence plot to {out_png}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -169,136 +322,35 @@ def main():
     except Exception as e:
         print(f"Error fetching station inventory: {e}")
         return
-    
+
+    # Build flat list of (network_code, station) pairs to submit
+    included_networks = ['AK']
+    station_tasks = [
+        (network.code, station)
+        for network in inventory
+        if network.code in included_networks
+        for station in network
+    ]
+
     per_station_data = []
 
-    included_networks = ['AK']
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    for network in inventory:
-        # Certain networks will be identified but the data not publicly accessible so just skip them
-        # You may see requests to networks not included, if they don't show on the graph they can probably be excluded
-        if network.code not in included_networks:
-            continue
-        for station in network:
-            try:
-                st = client.get_waveforms(
-                    network=network.code,
-                    station=station.code,
-                    location="*",
-                    channel="BNN,BNE,BNZ,BHN,BHE,BHZ,HNN,HNE,HNZ,HHN,HHE,HHZ",
-                    starttime=starttime,
-                    endtime=endtime 
-                )
-                temp = st.copy()
-
-                # Group traces by channel prefix (channel minus last character), e.g., 'BH' from 'BHN'
-                prefix_map = {}
-                for tr in temp:
-                    ch = tr.stats.channel
-                    if not ch:
-                        continue
-                    comp = ch[-1].upper()
-                    prefix = ch[:-1]
-                    if prefix not in prefix_map:
-                        prefix_map[prefix] = {}
-                    prefix_map[prefix][comp] = tr
-
-                coherence_entries = []
-
-                # Build map of component -> list of traces (across prefixes)
-                comp_map = {}
-                for prefix, comps in prefix_map.items():
-                    for comp, tr in comps.items():
-                        comp_map.setdefault(comp, []).append((prefix, tr))
-
-                # For each component (N/E/Z), compute coherence between traces of the same component
-                for comp, tr_list in comp_map.items():
-                    # need at least two traces to compute coherence
-                    if len(tr_list) < 2:
-                        continue
-                    # compute coherence for all unique pairs among traces with same component
-                    for i in range(len(tr_list)):
-                        for j in range(i + 1, len(tr_list)):
-                            pref_a, tr_a = tr_list[i]
-                            pref_b, tr_b = tr_list[j]
-                            tr_a = tr_a.copy()
-                            tr_b = tr_b.copy()
-                            try:
-                                tr_a.remove_response(output="VEL", water_level=60)
-                            except Exception:
-                                pass
-                            try:
-                                tr_b.remove_response(output="VEL", water_level=60)
-                            except Exception:
-                                pass
-
-                            for tr in (tr_a, tr_b):
-                                tr.detrend("demean")
-                                tr.detrend("linear")
-                                tr.taper(0.05)
-
-                            fs = min(tr_a.stats.sampling_rate, tr_b.stats.sampling_rate)
-
-                            try:
-                                tr_a.resample(fs)
-                                tr_b.resample(fs)
-                            except Exception:
-                                pass
-
-                            start = max(tr_a.stats.starttime, tr_b.stats.starttime)
-                            end = min(tr_a.stats.endtime, tr_b.stats.endtime)
-                            if end <= start:
-                                continue
-
-                            tr_a.trim(start, end)
-                            tr_b.trim(start, end)
-
-                            times, coh_ts, top_3 = sliding_coherence(
-                                tr_a.data,
-                                tr_b.data,
-                                fs=fs,
-                                win_len=60.0,
-                                step_len=5.0,
-                                seg_len=10.0,
-                                fmin=0.5,
-                                fmax=5.0
-                            )
-
-                            avg_coh = sum(top_3) / len(top_3) if len(top_3) > 0 else 0
-
-                            label = f"{tr_a.id} vs {tr_b.id}"
-                            coherence_entries.append({
-                                "times": times,
-                                "values": coh_ts,
-                                "label": label,
-                                "avg_coh": avg_coh,
-                                "top_3_vals": top_3,
-                                "component": comp
-                            })
-
-                if not coherence_entries:
-                    # no usable pairs for this station
-                    continue
-
-                print(f"Requested {network.code}.{station.code}...")
-
-                station_package = {
-                    "station_id": f"{network.code}.{station.code}",
-                    "waveforms": temp,
-                    "coherence_entries": coherence_entries,
-                }
-
-                per_station_data.append(station_package)
-
-            except Exception:
-                continue
+    with ThreadPoolExecutor(max_workers=min(len(station_tasks), 16)) as executor:
+        futures = {
+            executor.submit(fetch_station, client, net_code, sta, starttime, endtime): (net_code, sta)
+            for net_code, sta in station_tasks
+        }
+        for future in as_completed(futures):
+            result = future.result()
+            if result is not None:
+                per_station_data.append(result)
 
     if not per_station_data:
         print("No waveform data found for the given parameters.")
         return
 
     # Processing
-
     for entry in per_station_data:
         st = entry["waveforms"]
         st.merge(method=1, fill_value='interpolate')
@@ -307,44 +359,17 @@ def main():
         st.taper(max_percentage=0.05)
 
     # Plotting
-    import matplotlib.pyplot as plt
-
     output_dir = f"event_{args.eventid}_plots"
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
     plt.style.use("ggplot")
-    for entry in per_station_data:
-        station_name = entry["station_id"]
-        out_png = os.path.join(output_dir, f"station_{station_name}_coherence.png")
 
-        fig, ax_coh = plt.subplots(
-            figsize=(12, 6)
-        )
+    with ThreadPoolExecutor(max_workers=min(len(per_station_data), 16)) as executor:
+        futures = [executor.submit(plot_station, entry, output_dir, args.eventid) for entry in per_station_data]
+        for future in as_completed(futures):
+            future.result()
 
-        # ---- Coherence vs time ----
-        for coh in entry.get("coherence_entries", []):
-            ax_coh.plot(
-                coh["times"],
-                coh["values"],
-                lw=1.2,
-                label=f"{coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
-            )
-
-        ax_coh.set_xlabel("Time since start (s)")
-        ax_coh.set_ylabel("Coherence")
-        ax_coh.set_ylim(0, 1.05)
-        ax_coh.set_title(f"Event {args.eventid}, Station {entry['station_id']}: Coherence")
-        ax_coh.grid(True)
-        ax_coh.legend(fontsize="x-small")
-
-        # ---- Save and show ----
-        plt.savefig(out_png, dpi=200, bbox_inches="tight")
-        plt.close(fig)
-
-        print(f"Saved coherence plot to {out_png}")
-
-    # Compilation plot - all coherence data together
     fig, ax_comp = plt.subplots(figsize=(14, 8))
     
     for entry in per_station_data:
@@ -355,60 +380,25 @@ def main():
                 coh["values"],
                 lw=1.0,
                 label=f"{station_id}: {coh.get('label', 'coherence')} (avg={coh.get('avg_coh', 0):.2f})"
-            )
-    
+            )    
     ax_comp.set_xlabel("Time since start (s)")
     ax_comp.set_ylabel("Coherence")
     ax_comp.set_ylim(0, 1.05)
     ax_comp.set_title(f"Event {args.eventid}: All Station Coherence Compilation")
     ax_comp.grid(True)
     ax_comp.legend(fontsize="x-small", loc="best")
-    
+
     compilation_png = os.path.join(output_dir, f"event_{args.eventid}_coherence_compilation.png")
-    plt.savefig(compilation_png, dpi=200, bbox_inches="tight")
+    fig.savefig(compilation_png, dpi=200, bbox_inches="tight")
     plt.close(fig)
-    
     print(f"Saved compilation plot to {compilation_png}")
 
-    # ---- CSV Exporting ----
-
+    # CSV Export
     csv_filename = f"event_{args.eventid}_coherence_metrics.csv"
     csv_path = os.path.join(output_dir, csv_filename)
-
     print(f"---- Exporting coherence metrics to {csv_filename} ----")
 
-    fieldnames = [
-        "Station ID", "Event ID", "Magnitude", "Latitude", "Longitude", "Channel Pair", "Component",
-        "Coherence Rank 1", "Coherence Rank 2", "Coherence Rank 3", "Average Coherence Value"
-    ]
-
-    with open(csv_path, mode='w', newline='') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-
-        for entry in per_station_data:
-            station_id = entry["station_id"]
-
-            for coh in entry.get("coherence_entries", []):
-                component_label = coh.get("component", "Unknown")
-                top_vals = coh.get("top_3_vals", [0, 0, 0])
-                while len(top_vals) < 3:
-                    top_vals.append(0.0)
-                
-                writer.writerow({
-                    "Station ID": station_id,
-                    "Event ID": args.eventid,
-                    "Magnitude": event_metadata["mag"],
-                    "Latitude": event_metadata["lat"],
-                    "Longitude": event_metadata["long"],
-                    "Channel Pair": coh["label"],
-                    "Component": component_label,
-                    "Coherence Rank 1": f"{top_vals[0]:.4f}",
-                    "Coherence Rank 2": f"{top_vals[1]:.4f}",
-                    "Coherence Rank 3": f"{top_vals[2]:.4f}",
-                    "Average Coherence Value": f"{coh['avg_coh']:.4f}"
-                })
-
+    export_to_csv(csv_path, per_station_data, args.eventid, event_metadata)
 
 if __name__ == "__main__":
     main()
